@@ -82,6 +82,11 @@ target/
 profile_default/
 ipython_config.py
 
+instructions.md
+
+.env
+.venv
+
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
 #   intended to run in multiple environments; otherwise, check them in:
@@ -98,7 +103,7 @@ ipython_config.py
 #   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
-#uv.lock
+uv.lock
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
@@ -205,3 +210,71 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ============================================================================
+# PROJECT SPECIFIC IGNORES FOR FIN-TRADE-EXTRACT LAMBDA FUNCTIONS
+# ============================================================================
+
+# AWS Lambda deployment artifacts
+lambda-functions/*/deployment.zip
+lambda-functions/*-deploy.zip
+lambda-functions/*-deploy/
+*.zip
+
+# AWS test files and responses
+response.json
+test_payload.json
+test_*.json
+
+# Lambda function dependencies (installed via uv/pip)
+lambda-functions/*/site-packages/
+lambda-functions/*/lib/
+lambda-functions/*/bin/
+
+# AWS credentials and config (should use AWS CLI or IAM roles)
+.aws/
+aws-credentials.json
+*.pem
+*.key
+
+# Environment-specific configuration
+.env.local
+.env.production
+.env.development
+config.local.json
+
+# Data files (should be in S3, not git)
+data/
+*.parquet
+*.csv
+*.json.gz
+
+# Logs
+*.log
+logs/
+lambda-functions/*/logs/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# IDE and editor files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# uv.lock is typically included for reproducibility, but excluding here
+# since Lambda deployment needs flexibility across environments
+uv.lock
