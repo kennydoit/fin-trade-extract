@@ -1,0 +1,384 @@
+-- ============================================================================
+-- Snowpipe Configuration for Automated Data Loading
+-- Automatically loads data from S3 to Snowflake tables when files arrive
+-- ============================================================================
+
+USE DATABASE FIN_TRADE_EXTRACT;
+USE SCHEMA RAW;
+
+-- ============================================================================
+-- OVERVIEW DATA SNOWPIPE
+-- ============================================================================
+
+CREATE OR REPLACE PIPE OVERVIEW_PIPE
+AUTO_INGEST = TRUE
+AS
+COPY INTO OVERVIEW (
+    SYMBOL_ID,
+    SYMBOL,
+    ASSET_TYPE,
+    NAME,
+    DESCRIPTION,
+    CIK,
+    EXCHANGE,
+    CURRENCY,
+    COUNTRY,
+    SECTOR,
+    INDUSTRY,
+    ADDRESS,
+    OFFICIAL_SITE,
+    FISCAL_YEAR_END,
+    MARKET_CAPITALIZATION,
+    EBITDA,
+    PE_RATIO,
+    PEG_RATIO,
+    BOOK_VALUE,
+    DIVIDEND_PER_SHARE,
+    DIVIDEND_YIELD,
+    EPS,
+    REVENUE_PER_SHARE_TTM,
+    PROFIT_MARGIN,
+    OPERATING_MARGIN_TTM,
+    RETURN_ON_ASSETS_TTM,
+    RETURN_ON_EQUITY_TTM,
+    REVENUE_TTM,
+    GROSS_PROFIT_TTM,
+    DILUTED_EPS_TTM,
+    QUARTERLY_EARNINGS_GROWTH_YOY,
+    QUARTERLY_REVENUE_GROWTH_YOY,
+    ANALYST_TARGET_PRICE,
+    TRAILING_PE,
+    FORWARD_PE,
+    PRICE_TO_SALES_RATIO_TTM,
+    PRICE_TO_BOOK_RATIO,
+    EV_TO_REVENUE,
+    EV_TO_EBITDA,
+    BETA,
+    WEEK_52_HIGH,
+    WEEK_52_LOW,
+    DAY_50_MOVING_AVERAGE,
+    DAY_200_MOVING_AVERAGE,
+    SHARES_OUTSTANDING,
+    DIVIDEND_DATE,
+    EX_DIVIDEND_DATE,
+    API_RESPONSE_STATUS
+)
+FROM @OVERVIEW_STAGE
+FILE_FORMAT = PARQUET_FORMAT
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+ON_ERROR = 'CONTINUE';  -- Continue processing even if some records fail
+
+-- ============================================================================
+-- TIME SERIES DATA SNOWPIPE
+-- ============================================================================
+
+CREATE OR REPLACE PIPE TIME_SERIES_PIPE
+AUTO_INGEST = TRUE
+AS
+COPY INTO TIME_SERIES_DAILY_ADJUSTED (
+    SYMBOL_ID,
+    SYMBOL,
+    DATE,
+    OPEN,
+    HIGH,
+    LOW,
+    CLOSE,
+    ADJUSTED_CLOSE,
+    VOLUME,
+    DIVIDEND_AMOUNT,
+    SPLIT_COEFFICIENT
+)
+FROM @TIME_SERIES_STAGE
+FILE_FORMAT = PARQUET_FORMAT
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+ON_ERROR = 'CONTINUE';
+
+-- ============================================================================
+-- INCOME STATEMENT SNOWPIPE
+-- ============================================================================
+
+CREATE OR REPLACE PIPE INCOME_STATEMENT_PIPE
+AUTO_INGEST = TRUE
+AS
+COPY INTO INCOME_STATEMENT (
+    SYMBOL_ID,
+    SYMBOL,
+    FISCAL_DATE_ENDING,
+    REPORT_TYPE,
+    REPORTED_CURRENCY,
+    GROSS_PROFIT,
+    TOTAL_REVENUE,
+    COST_OF_REVENUE,
+    COST_OF_GOODS_AND_SERVICES_SOLD,
+    OPERATING_INCOME,
+    SELLING_GENERAL_AND_ADMINISTRATIVE,
+    RESEARCH_AND_DEVELOPMENT,
+    OPERATING_EXPENSES,
+    INVESTMENT_INCOME_NET,
+    NET_INTEREST_INCOME,
+    INTEREST_INCOME,
+    INTEREST_EXPENSE,
+    NON_INTEREST_INCOME,
+    OTHER_NON_OPERATING_INCOME,
+    DEPRECIATION,
+    DEPRECIATION_AND_AMORTIZATION,
+    INCOME_BEFORE_TAX,
+    INCOME_TAX_EXPENSE,
+    INTEREST_AND_DEBT_EXPENSE,
+    NET_INCOME_FROM_CONTINUING_OPERATIONS,
+    COMPREHENSIVE_INCOME_NET_OF_TAX,
+    EBIT,
+    EBITDA,
+    NET_INCOME,
+    API_RESPONSE_STATUS
+)
+FROM @INCOME_STATEMENT_STAGE
+FILE_FORMAT = PARQUET_FORMAT
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+ON_ERROR = 'CONTINUE';
+
+-- ============================================================================
+-- BALANCE SHEET SNOWPIPE
+-- ============================================================================
+
+CREATE OR REPLACE PIPE BALANCE_SHEET_PIPE
+AUTO_INGEST = TRUE
+AS
+COPY INTO BALANCE_SHEET (
+    SYMBOL_ID,
+    SYMBOL,
+    FISCAL_DATE_ENDING,
+    REPORT_TYPE,
+    REPORTED_CURRENCY,
+    TOTAL_ASSETS,
+    TOTAL_CURRENT_ASSETS,
+    CASH_AND_CASH_EQUIVALENTS_AT_CARRYING_VALUE,
+    CASH_AND_SHORT_TERM_INVESTMENTS,
+    INVENTORY,
+    CURRENT_NET_RECEIVABLES,
+    TOTAL_NON_CURRENT_ASSETS,
+    PROPERTY_PLANT_EQUIPMENT,
+    ACCUMULATED_DEPRECIATION_AMORTIZATION_PPE,
+    INTANGIBLE_ASSETS,
+    INTANGIBLE_ASSETS_EXCLUDING_GOODWILL,
+    GOODWILL,
+    INVESTMENTS,
+    LONG_TERM_INVESTMENTS,
+    SHORT_TERM_INVESTMENTS,
+    OTHER_CURRENT_ASSETS,
+    OTHER_NON_CURRENT_ASSETS,
+    TOTAL_LIABILITIES,
+    TOTAL_CURRENT_LIABILITIES,
+    CURRENT_ACCOUNTS_PAYABLE,
+    DEFERRED_REVENUE,
+    CURRENT_DEBT,
+    SHORT_TERM_DEBT,
+    TOTAL_NON_CURRENT_LIABILITIES,
+    CAPITAL_LEASE_OBLIGATIONS,
+    LONG_TERM_DEBT,
+    CURRENT_LONG_TERM_DEBT,
+    LONG_TERM_DEBT_NONCURRENT,
+    SHORT_LONG_TERM_DEBT_TOTAL,
+    OTHER_CURRENT_LIABILITIES,
+    OTHER_NON_CURRENT_LIABILITIES,
+    TOTAL_SHAREHOLDER_EQUITY,
+    TREASURY_STOCK,
+    RETAINED_EARNINGS,
+    COMMON_STOCK,
+    COMMON_STOCK_SHARES_OUTSTANDING,
+    API_RESPONSE_STATUS
+)
+FROM @BALANCE_SHEET_STAGE
+FILE_FORMAT = PARQUET_FORMAT
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+ON_ERROR = 'CONTINUE';
+
+-- ============================================================================
+-- CASH FLOW SNOWPIPE
+-- ============================================================================
+
+CREATE OR REPLACE PIPE CASH_FLOW_PIPE
+AUTO_INGEST = TRUE
+AS
+COPY INTO CASH_FLOW (
+    SYMBOL_ID,
+    SYMBOL,
+    FISCAL_DATE_ENDING,
+    REPORT_TYPE,
+    REPORTED_CURRENCY,
+    OPERATING_CASHFLOW,
+    PAYMENTS_FOR_OPERATING_ACTIVITIES,
+    PROCEEDS_FROM_OPERATING_ACTIVITIES,
+    CHANGE_IN_OPERATING_LIABILITIES,
+    CHANGE_IN_OPERATING_ASSETS,
+    DEPRECIATION_DEPLETION_AND_AMORTIZATION,
+    CAPITAL_EXPENDITURES,
+    CHANGE_IN_RECEIVABLES,
+    CHANGE_IN_INVENTORY,
+    PROFIT_LOSS,
+    CASHFLOW_FROM_INVESTMENT,
+    CASHFLOW_FROM_FINANCING,
+    PROCEEDS_FROM_REPAYMENTS_OF_SHORT_TERM_DEBT,
+    PAYMENTS_FOR_REPURCHASE_OF_COMMON_STOCK,
+    PAYMENTS_FOR_REPURCHASE_OF_EQUITY,
+    PAYMENTS_FOR_REPURCHASE_OF_PREFERRED_STOCK,
+    DIVIDEND_PAYOUT,
+    DIVIDEND_PAYOUT_COMMON_STOCK,
+    DIVIDEND_PAYOUT_PREFERRED_STOCK,
+    PROCEEDS_FROM_ISSUANCE_OF_COMMON_STOCK,
+    PROCEEDS_FROM_ISSUANCE_OF_LONG_TERM_DEBT_AND_CAPITAL_SECURITIES_NET,
+    PROCEEDS_FROM_ISSUANCE_OF_PREFERRED_STOCK,
+    PROCEEDS_FROM_REPURCHASE_OF_EQUITY,
+    PROCEEDS_FROM_SALE_OF_TREASURY_STOCK,
+    CHANGE_IN_CASH_AND_CASH_EQUIVALENTS,
+    CHANGE_IN_EXCHANGE_RATE,
+    NET_INCOME,
+    API_RESPONSE_STATUS
+)
+FROM @CASH_FLOW_STAGE
+FILE_FORMAT = PARQUET_FORMAT
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+ON_ERROR = 'CONTINUE';
+
+-- ============================================================================
+-- COMMODITIES SNOWPIPE
+-- ============================================================================
+
+CREATE OR REPLACE PIPE COMMODITIES_PIPE
+AUTO_INGEST = TRUE
+AS
+COPY INTO COMMODITIES (
+    COMMODITY_NAME,
+    FUNCTION_NAME,
+    DATE,
+    INTERVAL,
+    UNIT,
+    VALUE,
+    NAME,
+    API_RESPONSE_STATUS
+)
+FROM @COMMODITIES_STAGE
+FILE_FORMAT = PARQUET_FORMAT
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+ON_ERROR = 'CONTINUE';
+
+-- ============================================================================
+-- ECONOMIC INDICATORS SNOWPIPE
+-- ============================================================================
+
+CREATE OR REPLACE PIPE ECONOMIC_INDICATORS_PIPE
+AUTO_INGEST = TRUE
+AS
+COPY INTO ECONOMIC_INDICATORS (
+    ECONOMIC_INDICATOR_NAME,
+    FUNCTION_NAME,
+    MATURITY,
+    DATE,
+    INTERVAL,
+    UNIT,
+    VALUE,
+    NAME,
+    API_RESPONSE_STATUS
+)
+FROM @ECONOMIC_INDICATORS_STAGE
+FILE_FORMAT = PARQUET_FORMAT
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+ON_ERROR = 'CONTINUE';
+
+-- ============================================================================
+-- INSIDER TRANSACTIONS SNOWPIPE
+-- ============================================================================
+
+CREATE OR REPLACE PIPE INSIDER_TRANSACTIONS_PIPE
+AUTO_INGEST = TRUE
+AS
+COPY INTO INSIDER_TRANSACTIONS (
+    SYMBOL_ID,
+    SYMBOL,
+    TRANSACTION_DATE,
+    EXECUTIVE,
+    EXECUTIVE_TITLE,
+    SECURITY_TYPE,
+    ACQUISITION_OR_DISPOSAL,
+    SHARES,
+    SHARE_PRICE,
+    API_RESPONSE_STATUS
+)
+FROM @INSIDER_TRANSACTIONS_STAGE
+FILE_FORMAT = PARQUET_FORMAT
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+ON_ERROR = 'CONTINUE';
+
+-- ============================================================================
+-- EARNINGS CALL TRANSCRIPTS SNOWPIPE
+-- ============================================================================
+
+CREATE OR REPLACE PIPE EARNINGS_CALL_TRANSCRIPTS_PIPE
+AUTO_INGEST = TRUE
+AS
+COPY INTO EARNINGS_CALL_TRANSCRIPTS (
+    SYMBOL_ID,
+    SYMBOL,
+    QUARTER,
+    SPEAKER,
+    TITLE,
+    CONTENT,
+    CONTENT_HASH,
+    SENTIMENT,
+    API_RESPONSE_STATUS
+)
+FROM @EARNINGS_CALL_TRANSCRIPTS_STAGE
+FILE_FORMAT = JSON_FORMAT
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+ON_ERROR = 'CONTINUE';
+
+-- ============================================================================
+-- SHOW CREATED SNOWPIPES
+-- ============================================================================
+
+SHOW PIPES IN SCHEMA RAW;
+
+-- Get Snowpipe notification channels (for SQS setup)
+SELECT 
+    PIPE_NAME,
+    NOTIFICATION_CHANNEL,
+    AUTO_INGEST
+FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
+
+-- ============================================================================
+-- SNOWPIPE MANAGEMENT COMMANDS
+-- ============================================================================
+
+-- Check Snowpipe status
+-- SELECT SYSTEM$PIPE_STATUS('FIN_TRADE_EXTRACT.RAW.OVERVIEW_PIPE');
+
+-- Refresh pipe manually if needed
+-- ALTER PIPE OVERVIEW_PIPE REFRESH;
+
+-- Show pipe history
+-- SELECT * FROM TABLE(INFORMATION_SCHEMA.PIPE_USAGE_HISTORY(
+--     DATE_RANGE_START=>DATEADD('day',-7,CURRENT_DATE()),
+--     DATE_RANGE_END=>CURRENT_DATE(),
+--     PIPE_NAME=>'FIN_TRADE_EXTRACT.RAW.OVERVIEW_PIPE'
+-- ));
+
+-- ============================================================================
+-- NOTES FOR AWS SQS SETUP
+-- ============================================================================
+
+/*
+IMPORTANT: After creating the Snowpipes, you need to:
+
+1. Get the notification channels from the pipes above
+2. Configure S3 bucket notifications to send events to those SQS queues
+3. Set up S3 event notifications for each prefix:
+   - s3://fin-trade-craft-landing/overview/
+   - s3://fin-trade-craft-landing/time-series/
+   - s3://fin-trade-craft-landing/income-statement/
+   - etc.
+
+Example AWS CLI command to add S3 bucket notification:
+aws s3api put-bucket-notification-configuration --bucket fin-trade-craft-landing --notification-configuration file://s3-notification-config.json
+
+This will automatically trigger Snowpipe when Lambda functions write files to S3.
+*/
