@@ -1,0 +1,101 @@
+{
+  "TopicConfigurations": [],
+  "QueueConfigurations": [
+    {
+      "Id": "snowflake-overview-notification",
+      "QueueArn": "SNOWFLAKE_SQS_ARN_FROM_SNOWPIPE",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "overview/"
+            },
+            {
+              "Name": "suffix", 
+              "Value": ".csv"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Id": "snowflake-time-series-notification",
+      "QueueArn": "SNOWFLAKE_SQS_ARN_FROM_SNOWPIPE",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "time-series/"
+            },
+            {
+              "Name": "suffix",
+              "Value": ".csv"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Id": "snowflake-income-statement-notification",
+      "QueueArn": "SNOWFLAKE_SQS_ARN_FROM_SNOWPIPE",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "income-statement/"
+            },
+            {
+              "Name": "suffix",
+              "Value": ".csv"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Id": "snowflake-balance-sheet-notification",
+      "QueueArn": "SNOWFLAKE_SQS_ARN_FROM_SNOWPIPE",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "balance-sheet/"
+            },
+            {
+              "Name": "suffix",
+              "Value": ".csv"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Id": "snowflake-cash-flow-notification",
+      "QueueArn": "SNOWFLAKE_SQS_ARN_FROM_SNOWPIPE",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "cash-flow/"
+            },
+            {
+              "Name": "suffix",
+              "Value": ".csv"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "LambdaConfigurations": []
+}

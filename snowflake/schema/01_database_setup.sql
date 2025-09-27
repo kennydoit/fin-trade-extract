@@ -18,9 +18,6 @@ WITH
     AUTO_SUSPEND = 60                       -- Suspend after 1 minute
     AUTO_RESUME = TRUE                      -- Auto-resume on query
     INITIALLY_SUSPENDED = TRUE              -- Start suspended
-    MIN_CLUSTER_COUNT = 1                   -- Minimum clusters
-    MAX_CLUSTER_COUNT = 1                   -- Maximum clusters (no auto-scaling)
-    SCALING_POLICY = 'STANDARD'
     COMMENT = 'Warehouse for fin-trade-extract data pipeline - cost optimized';
 
 -- Set context

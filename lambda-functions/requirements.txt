@@ -3,9 +3,8 @@
 # AWS SDK
 boto3>=1.26.0
 
-# Data processing
+# Data processing (CSV support with pandas)
 pandas>=2.0.0
-pyarrow>=12.0.0
 numpy>=1.24.0
 
 # HTTP requests
@@ -14,11 +13,13 @@ requests>=2.31.0
 # Date/time handling
 python-dateutil>=2.8.2
 
-# JSON/data handling (built-in but explicit version for compatibility)
+# CSV processing is handled by pandas and Python's built-in csv module
 # Standard library modules used:
+# - csv
 # - json
 # - datetime
 # - time
 # - hashlib
 # - uuid
 # - gzip
+# - io

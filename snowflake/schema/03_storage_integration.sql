@@ -17,7 +17,6 @@ STORAGE_PROVIDER = S3
 ENABLED = TRUE
 STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::441691361831:role/SnowflakeS3AccessRole'  -- Will be created
 STORAGE_ALLOWED_LOCATIONS = ('s3://fin-trade-craft-landing/')
-STORAGE_BLOCKED_LOCATIONS = ()  -- None blocked
 COMMENT = 'Integration for accessing fin-trade-craft-landing S3 bucket';
 
 -- Show the storage integration to get the IAM role details

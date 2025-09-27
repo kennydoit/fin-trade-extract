@@ -1,11 +1,11 @@
 """
 AWS Lambda function for extracting company overview data from Alpha Vantage API.
-Writes results to S3 as compressed Parquet files for Snowpipe ingestion.
+Writes results to S3 as CSV files for Snowpipe ingestion.
 
 This Lambda function:
 1. Extracts overview data for specified symbols via Alpha Vantage API
 2. Applies adaptive rate limiting for optimal throughput
-3. Writes business data as Parquet files to S3
+3. Writes business data as CSV files to S3 (s3://fin-trade-craft-landing/overview/)
 4. Stores audit trail as compressed JSON files
 5. Follows AWS security best practices with Parameter Store
 """
@@ -138,64 +138,63 @@ class OverviewExtractorLambda:
         
         # Base record structure
         record = {
-            "symbol_id": symbol_id,
-            "symbol": symbol,
-            "run_id": run_id,
-            "status": status,
-            "created_at": current_timestamp,
-            "updated_at": current_timestamp,
+            "SYMBOL_ID": symbol_id,
+            "SYMBOL": symbol,
+            "API_RESPONSE_STATUS": status,
+            "CREATED_AT": current_timestamp,
+            "UPDATED_AT": current_timestamp,
         }
         
         # Add business data if successful
         if status == "success" and api_response:
             record.update({
-                "assettype": api_response.get("AssetType"),
-                "name": api_response.get("Name"),
-                "description": api_response.get("Description"),
-                "cik": api_response.get("CIK"),
-                "exchange": api_response.get("Exchange"),
-                "currency": api_response.get("Currency"),
-                "country": api_response.get("Country"),
-                "sector": api_response.get("Sector"),
-                "industry": api_response.get("Industry"),
-                "address": api_response.get("Address"),
-                "officialsite": api_response.get("OfficialSite"),
-                "fiscalyearend": api_response.get("FiscalYearEnd"),
+                "ASSET_TYPE": api_response.get("AssetType"),
+                "NAME": api_response.get("Name"),
+                "DESCRIPTION": api_response.get("Description"),
+                "CIK": api_response.get("CIK"),
+                "EXCHANGE": api_response.get("Exchange"),
+                "CURRENCY": api_response.get("Currency"),
+                "COUNTRY": api_response.get("Country"),
+                "SECTOR": api_response.get("Sector"),
+                "INDUSTRY": api_response.get("Industry"),
+                "ADDRESS": api_response.get("Address"),
+                "OFFICIAL_SITE": api_response.get("OfficialSite"),
+                "FISCAL_YEAR_END": api_response.get("FiscalYearEnd"),
                 # Financial metrics
-                "marketcapitalization": self._safe_float(api_response.get("MarketCapitalization")),
-                "ebitda": self._safe_float(api_response.get("EBITDA")),
-                "peratio": self._safe_float(api_response.get("PERatio")),
-                "pegratio": self._safe_float(api_response.get("PEGRatio")),
-                "bookvalue": self._safe_float(api_response.get("BookValue")),
-                "dividendpershare": self._safe_float(api_response.get("DividendPerShare")),
-                "dividendyield": self._safe_float(api_response.get("DividendYield")),
-                "eps": self._safe_float(api_response.get("EPS")),
-                "revenuepersharettm": self._safe_float(api_response.get("RevenuePerShareTTM")),
-                "profitmargin": self._safe_float(api_response.get("ProfitMargin")),
-                "operatingmarginttm": self._safe_float(api_response.get("OperatingMarginTTM")),
-                "returnonassetsttm": self._safe_float(api_response.get("ReturnOnAssetsTTM")),
-                "returnonequityttm": self._safe_float(api_response.get("ReturnOnEquityTTM")),
-                "revenuettm": self._safe_float(api_response.get("RevenueTTM")),
-                "grossprofitttm": self._safe_float(api_response.get("GrossProfitTTM")),
-                "dilutedepsttm": self._safe_float(api_response.get("DilutedEPSTTM")),
-                "quarterlyearningsgrowthyoy": self._safe_float(api_response.get("QuarterlyEarningsGrowthYOY")),
-                "quarterlyrevenuegrowthyoy": self._safe_float(api_response.get("QuarterlyRevenueGrowthYOY")),
-                "analystrating": api_response.get("AnalystRating"),
-                "analysttargetprice": self._safe_float(api_response.get("AnalystTargetPrice")),
-                "trailingpe": self._safe_float(api_response.get("TrailingPE")),
-                "forwardpe": self._safe_float(api_response.get("ForwardPE")),
-                "pricetosalesratiottm": self._safe_float(api_response.get("PriceToSalesRatioTTM")),
-                "pricetobookratio": self._safe_float(api_response.get("PriceToBookRatio")),
-                "evtorevenue": self._safe_float(api_response.get("EVToRevenue")),
-                "evtoebitda": self._safe_float(api_response.get("EVToEBITDA")),
-                "beta": self._safe_float(api_response.get("Beta")),
-                "52weekhigh": self._safe_float(api_response.get("52WeekHigh")),
-                "52weeklow": self._safe_float(api_response.get("52WeekLow")),
-                "50daymovingaverage": self._safe_float(api_response.get("50DayMovingAverage")),
-                "200daymovingaverage": self._safe_float(api_response.get("200DayMovingAverage")),
-                "sharesoutstanding": self._safe_float(api_response.get("SharesOutstanding")),
-                "dividenddate": api_response.get("DividendDate"),
-                "exdividenddate": api_response.get("ExDividendDate")
+                "MARKET_CAPITALIZATION": self._safe_float(api_response.get("MarketCapitalization")),
+                "EBITDA": self._safe_float(api_response.get("EBITDA")),
+                "PE_RATIO": self._safe_float(api_response.get("PERatio")),
+                "PEG_RATIO": self._safe_float(api_response.get("PEGRatio")),
+                "BOOK_VALUE": self._safe_float(api_response.get("BookValue")),
+                "DIVIDEND_PER_SHARE": self._safe_float(api_response.get("DividendPerShare")),
+                "DIVIDEND_YIELD": self._safe_float(api_response.get("DividendYield")),
+                "EPS": self._safe_float(api_response.get("EPS")),
+                "REVENUE_PER_SHARE_TTM": self._safe_float(api_response.get("RevenuePerShareTTM")),
+                "PROFIT_MARGIN": self._safe_float(api_response.get("ProfitMargin")),
+                "OPERATING_MARGIN_TTM": self._safe_float(api_response.get("OperatingMarginTTM")),
+                "RETURN_ON_ASSETS_TTM": self._safe_float(api_response.get("ReturnOnAssetsTTM")),
+                "RETURN_ON_EQUITY_TTM": self._safe_float(api_response.get("ReturnOnEquityTTM")),
+                "REVENUE_TTM": self._safe_float(api_response.get("RevenueTTM")),
+                "GROSS_PROFIT_TTM": self._safe_float(api_response.get("GrossProfitTTM")),
+                "DILUTED_EPS_TTM": self._safe_float(api_response.get("DilutedEPSTTM")),
+                "QUARTERLY_EARNINGS_GROWTH_YOY": self._safe_float(api_response.get("QuarterlyEarningsGrowthYOY")),
+                "QUARTERLY_REVENUE_GROWTH_YOY": self._safe_float(api_response.get("QuarterlyRevenueGrowthYOY")),
+                "ANALYST_TARGET_PRICE": self._safe_float(api_response.get("AnalystTargetPrice")),
+                "TRAILING_PE": self._safe_float(api_response.get("TrailingPE")),
+                "FORWARD_PE": self._safe_float(api_response.get("ForwardPE")),
+                "PRICE_TO_SALES_RATIO_TTM": self._safe_float(api_response.get("PriceToSalesRatioTTM")),
+                "PRICE_TO_BOOK_RATIO": self._safe_float(api_response.get("PriceToBookRatio")),
+                "EV_TO_REVENUE": self._safe_float(api_response.get("EVToRevenue")),
+                "EV_TO_EBITDA": self._safe_float(api_response.get("EVToEBITDA")),
+                "BETA": self._safe_float(api_response.get("Beta")),
+                "WEEK_52_HIGH": self._safe_float(api_response.get("52WeekHigh")),
+                "WEEK_52_LOW": self._safe_float(api_response.get("52WeekLow")),
+                "DAY_50_MOVING_AVERAGE": self._safe_float(api_response.get("50DayMovingAverage")),
+                "DAY_200_MOVING_AVERAGE": self._safe_float(api_response.get("200DayMovingAverage")),
+                "SHARES_OUTSTANDING": self._safe_float(api_response.get("SharesOutstanding")),
+                "DIVIDEND_DATE": api_response.get("DividendDate"),
+                "EX_DIVIDEND_DATE": api_response.get("ExDividendDate"),
+                "API_RESPONSE_STATUS": status
             })
         
         return record

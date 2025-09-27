@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::901792597085:root",
+          "arn:aws:iam::901792597085:user/qnd81000-s"
+        ]
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
