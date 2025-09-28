@@ -12,7 +12,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import boto3
-import pandas as pd
 from botocore.exceptions import BotoCoreError, ClientError
 
 

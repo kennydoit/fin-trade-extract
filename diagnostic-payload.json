@@ -1,0 +1,6 @@
+{
+  "symbols": ["AAPL"],
+  "run_id": "diagnostic-test-001",
+  "batch_size": 1,
+  "debug": true
+}

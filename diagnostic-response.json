@@ -1,0 +1,1 @@
+{"statusCode": 200, "body": "{\"message\": \"Lambda function test successful\", \"results\": [{\"symbol\": \"AAPL\", \"timestamp\": \"2025-09-28T02:35:17.441178\", \"status\": \"test_success\"}]}"}

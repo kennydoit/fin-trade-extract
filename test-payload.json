@@ -1,0 +1,5 @@
+{
+  "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "JPM", "BAC", "JNJ"],
+  "run_id": "manual-load-test-001",
+  "batch_size": 10
+}

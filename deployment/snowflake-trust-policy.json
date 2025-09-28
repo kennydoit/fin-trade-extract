@@ -1,0 +1,17 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "REPLACE_WITH_STORAGE_AWS_IAM_USER_ARN"
+            },
+            "Action": "sts:AssumeRole",
+            "Condition": {
+                "StringEquals": {
+                    "sts:ExternalId": "REPLACE_WITH_STORAGE_AWS_EXTERNAL_ID"
+                }
+            }
+        }
+    ]
+}
