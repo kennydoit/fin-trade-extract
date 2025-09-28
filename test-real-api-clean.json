@@ -1,1 +1,0 @@
-{"symbols": ["AAPL"], "s3_bucket": "fin-trade-craft-landing", "s3_prefix": "overview-data/", "test_mode": false, "batch_id": "test_real_api_001", "max_concurrent": 1}

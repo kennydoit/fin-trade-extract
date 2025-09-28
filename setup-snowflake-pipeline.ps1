@@ -1,12 +1,12 @@
-# ===Write-Host "Setting up Snowflake CSV Data Loading Pipeline..." -ForegroundColor Green=========================================================================
-# Snowflake CSV Data Loading Setup Script (PowerShell)
+# =============================================================================
+# Snowflake CSV Data Loading Setup Script (PowerShell) - Fixed Version
 # Run this step by step to set up the complete data pipeline
 # =============================================================================
 
 Write-Host "Setting up Snowflake CSV Data Loading Pipeline..." -ForegroundColor Green
 
 # =============================================================================
-# Prerequisites
+# STEP 1: Verify prerequisites
 # =============================================================================
 
 Write-Host "Step 1: Verifying prerequisites..." -ForegroundColor Yellow
@@ -122,12 +122,15 @@ Write-Host "Step 6: Create Snowpipes in Snowflake" -ForegroundColor Yellow
 Write-Host "Execute this SQL file in Snowflake:" -ForegroundColor Cyan
 Write-Host "   snowflake/schema/04_snowpipes_csv.sql" -ForegroundColor White
 Write-Host ""
-Write-Host "After creating pipes, run this query to get notification channels:" -ForegroundColor Cyan
+Write-Host "After creating pipes, run these commands to get notification channels:" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "SELECT PIPE_NAME, NOTIFICATION_CHANNEL" -ForegroundColor White
-Write-Host "FROM TABLE(INFORMATION_SCHEMA.PIPES)" -ForegroundColor White
-Write-Host "WHERE PIPE_SCHEMA = 'RAW'" -ForegroundColor White
-Write-Host "ORDER BY PIPE_NAME;" -ForegroundColor White
+Write-Host "DESC PIPE OVERVIEW_PIPE;" -ForegroundColor White
+Write-Host "DESC PIPE TIME_SERIES_PIPE;" -ForegroundColor White
+Write-Host "DESC PIPE INCOME_STATEMENT_PIPE;" -ForegroundColor White
+Write-Host "DESC PIPE BALANCE_SHEET_PIPE;" -ForegroundColor White
+Write-Host "DESC PIPE CASH_FLOW_PIPE;" -ForegroundColor White
+Write-Host ""
+Write-Host "Look for the 'notification_channel' field in each output" -ForegroundColor Cyan
 Write-Host ""
 
 Read-Host "Press Enter after creating Snowpipes and noting the notification channels"
@@ -139,10 +142,10 @@ Read-Host "Press Enter after creating Snowpipes and noting the notification chan
 Write-Host ""
 Write-Host "Please provide the Snowpipe notification channel ARNs:" -ForegroundColor Yellow
 $OVERVIEW_PIPE_ARN = Read-Host "Enter OVERVIEW_PIPE notification channel"
-$TIME_SERIES_PIPE_ARN = Read-Host "Enter TIME_SERIES_PIPE notification channel"
-$INCOME_STATEMENT_PIPE_ARN = Read-Host "Enter INCOME_STATEMENT_PIPE notification channel"
-$BALANCE_SHEET_PIPE_ARN = Read-Host "Enter BALANCE_SHEET_PIPE notification channel"
-$CASH_FLOW_PIPE_ARN = Read-Host "Enter CASH_FLOW_PIPE notification channel"
+$TIME_SERIES_PIPE_ARN = Read-Host "Enter TIME_SERIES_PIPE notification channel (or press Enter to skip)"
+$INCOME_STATEMENT_PIPE_ARN = Read-Host "Enter INCOME_STATEMENT_PIPE notification channel (or press Enter to skip)"
+$BALANCE_SHEET_PIPE_ARN = Read-Host "Enter BALANCE_SHEET_PIPE notification channel (or press Enter to skip)"
+$CASH_FLOW_PIPE_ARN = Read-Host "Enter CASH_FLOW_PIPE notification channel (or press Enter to skip)"
 
 # =============================================================================
 # STEP 8: Create S3 Bucket Notification Configuration
@@ -151,10 +154,11 @@ $CASH_FLOW_PIPE_ARN = Read-Host "Enter CASH_FLOW_PIPE notification channel"
 Write-Host ""
 Write-Host "Step 8: Creating S3 bucket notification configuration..." -ForegroundColor Yellow
 
-# Create bucket notification configuration file
-$notificationConfig = @"
-{
-    "QueueConfigurations": [
+# Build notification configurations array
+$queueConfigurations = @()
+
+# Always add overview pipe
+$queueConfigurations += @"
         {
             "Id": "overview-pipe-notification",
             "QueueArn": "$OVERVIEW_PIPE_ARN",
@@ -167,8 +171,13 @@ $notificationConfig = @"
                     ]
                 }
             }
-        },
-        {
+        }
+"@
+
+# Add other pipes if provided
+if ($TIME_SERIES_PIPE_ARN) {
+    $queueConfigurations += @"
+        ,{
             "Id": "time-series-pipe-notification", 
             "QueueArn": "$TIME_SERIES_PIPE_ARN",
             "Events": ["s3:ObjectCreated:Put", "s3:ObjectCreated:Post"],
@@ -180,51 +189,22 @@ $notificationConfig = @"
                     ]
                 }
             }
-        },
-        {
-            "Id": "income-statement-pipe-notification",
-            "QueueArn": "$INCOME_STATEMENT_PIPE_ARN",
-            "Events": ["s3:ObjectCreated:Put", "s3:ObjectCreated:Post"],
-            "Filter": {
-                "Key": {
-                    "FilterRules": [
-                        {"Name": "prefix", "Value": "income-statement/"},
-                        {"Name": "suffix", "Value": ".csv"}
-                    ]
-                }
-            }
-        },
-        {
-            "Id": "balance-sheet-pipe-notification",
-            "QueueArn": "$BALANCE_SHEET_PIPE_ARN",
-            "Events": ["s3:ObjectCreated:Put", "s3:ObjectCreated:Post"],
-            "Filter": {
-                "Key": {
-                    "FilterRules": [
-                        {"Name": "prefix", "Value": "balance-sheet/"},
-                        {"Name": "suffix", "Value": ".csv"}
-                    ]
-                }
-            }
-        },
-        {
-            "Id": "cash-flow-pipe-notification",
-            "QueueArn": "$CASH_FLOW_PIPE_ARN",
-            "Events": ["s3:ObjectCreated:Put", "s3:ObjectCreated:Post"],
-            "Filter": {
-                "Key": {
-                    "FilterRules": [
-                        {"Name": "prefix", "Value": "cash-flow/"},
-                        {"Name": "suffix", "Value": ".csv"}
-                    ]
-                }
-            }
         }
+"@
+}
+
+# Create bucket notification configuration file
+$notificationConfig = @"
+{
+    "QueueConfigurations": [
+$($queueConfigurations -join "")
     ]
 }
 "@
 
 $notificationConfig | Out-File "deployment/bucket-notifications.json" -Encoding utf8
+
+Write-Host "Created notification configuration file: deployment/bucket-notifications.json"
 
 # Apply notification configuration
 Write-Host "Applying S3 bucket notification configuration..." -ForegroundColor Blue
@@ -234,6 +214,7 @@ try {
 }
 catch {
     Write-Host "Failed to configure S3 bucket notifications" -ForegroundColor Red
+    Write-Host "Check the notification configuration file and try again" -ForegroundColor Yellow
     exit 1
 }
 
@@ -247,7 +228,10 @@ Write-Host "Step 9: Testing the pipeline..." -ForegroundColor Yellow
 # Test Lambda function
 Write-Host "Running Lambda function to generate test data..." -ForegroundColor Blue
 try {
-    aws lambda invoke --function-name fin-trade-overview-extractor --payload '{\"symbols\": [\"MSFT\"], \"run_id\": \"snowflake-test-001\"}' test-response.json
+    $json = '{"symbols": ["MSFT"], "run_id": "snowflake-test-001"}'
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    $base64 = [System.Convert]::ToBase64String($bytes)
+    aws lambda invoke --function-name fin-trade-overview-extractor --payload $base64 test-response.json
     Write-Host "Lambda function executed" -ForegroundColor Green
     Write-Host "Response:" -ForegroundColor Cyan
     Get-Content test-response.json | Write-Host

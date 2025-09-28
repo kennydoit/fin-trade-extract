@@ -1,7 +1,0 @@
-{
-  "symbols": ["AAPL"],
-  "run_id": "real-api-test-001",
-  "batch_size": 1,
-  "debug": true,
-  "test_mode": false
-}
