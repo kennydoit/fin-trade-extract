@@ -62,7 +62,14 @@ jobs:
         run: |
           python scripts/github_actions/fetch_listing_status_to_s3.py
 
-      # Step 2: Load/merge LISTING_STATUS into Snowflake
+      # Step 2: Install SnowSQL CLI
+      - name: Install SnowSQL CLI
+        run: |
+          wget -O snowsql-1.2.31-linux_x86_64.bash https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.31-linux_x86_64.bash
+          bash snowsql-1.2.31-linux_x86_64.bash
+          echo "/home/runner/.snowsql" >> $GITHUB_PATH
+
+      # Step 3: Load/merge LISTING_STATUS into Snowflake
       - name: Load LISTING_STATUS into Snowflake
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
