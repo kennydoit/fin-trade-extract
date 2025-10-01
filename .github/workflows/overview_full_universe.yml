@@ -23,7 +23,7 @@ on:
 
 jobs:
   full-universe:
-    runs-on: ubuntu-latest
+  runs-on: ubuntu-22.04
     permissions:
       id-token: write   # for AWS OIDC
       contents: read
