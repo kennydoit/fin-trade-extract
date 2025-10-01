@@ -1,1 +1,0 @@
-# Overview extractor Lambda function

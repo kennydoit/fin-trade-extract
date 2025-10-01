@@ -83,25 +83,5 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Invoke Lambda across full symbol universe
-        env:
-          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
-          AWS_REGION: ${{ env.AWS_REGION }}
-        run: |
-          python scripts/github_actions/invoke_overview_lambda.py \
-            --function-name "${{ github.event.inputs.function_name || 'fin-trade-extract-overview' }}" \
-            --batch-size ${{ github.event.inputs.batch_size || '50' }} \
-            --sleep-seconds ${{ github.event.inputs.inter_batch_sleep_seconds || '1' }}
 
-      - name: Merge in Snowflake (watermark by date)
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
-          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
-          LOAD_DATE: ${{ github.event.inputs.load_date }}
-        run: |
-          python scripts/github_actions/snowflake_merge_full_load.py
 
