@@ -63,13 +63,13 @@ jobs:
           python scripts/github_actions/fetch_listing_status_to_s3.py
 
 
-      # Step 2: Install SnowSQL CLI via apt (Ubuntu 24.04+ compatible, 2024 key)
-      - name: Install SnowSQL CLI via apt (Ubuntu 24.04+ compatible, 2024 key)
+      # Step 2: Install SnowSQL CLI via apt (Ubuntu 24.04 workaround: use jammy repo and 2021 key)
+      - name: Install SnowSQL CLI via apt (Ubuntu 24.04 workaround)
         run: |
           sudo apt-get update
           sudo apt-get install -y gnupg2 curl
-          curl -fsSL https://sfc-repo.snowflakecomputing.com/keys/snowflake_key_2024.pub | sudo gpg --dearmor -o /usr/share/keyrings/snowflake.gpg
-          echo "deb [signed-by=/usr/share/keyrings/snowflake.gpg] https://sfc-repo.snowflakecomputing.com/apt/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/snowflake.list
+          curl -fsSL https://sfc-repo.snowflakecomputing.com/keys/snowflake_key_2021.pub | sudo gpg --dearmor -o /usr/share/keyrings/snowflake.gpg
+          echo "deb [signed-by=/usr/share/keyrings/snowflake.gpg] https://sfc-repo.snowflakecomputing.com/apt/ubuntu/ jammy main" | sudo tee /etc/apt/sources.list.d/snowflake.list
           sudo apt-get update
           sudo apt-get install -y snowsql
           echo "/usr/bin" >> $GITHUB_PATH
