@@ -98,28 +98,3 @@ jobs:
         run: |
           python scripts/github_actions/snowflake_merge_full_load.py
 
-    env:
-      # Configure your AWS OIDC role and region at the workflow or repo level
-      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-name: Overview Full Universe Load
-on:
-  workflow_dispatch:
-    inputs:
-      function_name:
-        description: AWS Lambda function name
-        required: true
-        default: fin-trade-extract-overview
-      batch_size:
-        description: Symbols per batch (Lambda expects up to ~50)
-        required: true
-        default: '50'
-      inter_batch_sleep_seconds:
-        description: Sleep between batches to avoid pressure on Lambda
-        required: true
-        default: '1'
-      load_date:
-        description: Load date (YYYY-MM-DD) for Snowflake watermark, defaults to today
-        required: false
-  schedule:
-    - cron: '30 5 * * *'
