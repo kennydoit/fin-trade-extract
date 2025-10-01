@@ -1,4 +1,0 @@
-# Minimal Lambda Requirements (no pandas/numpy for initial test)
-boto3>=1.26.0
-requests>=2.31.0
-python-dateutil>=2.8.2

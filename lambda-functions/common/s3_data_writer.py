@@ -185,7 +185,14 @@ class S3DataWriter:
                 # Convert None values to empty strings for CSV
                 clean_record = {}
                 for col in columns:
-                    value = record.get(col.lower()) or record.get(col) or ""
+                    # Try exact match first, then case-insensitive
+                    value = record.get(col)
+                    if value is None:
+                        # Try lowercase version
+                        value = record.get(col.lower())
+                    if value is None:
+                        value = ""
+                    
                     # Handle datetime objects
                     if isinstance(value, datetime):
                         value = value.isoformat()

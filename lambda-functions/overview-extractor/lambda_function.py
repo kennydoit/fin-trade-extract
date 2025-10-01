@@ -18,11 +18,18 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-# Import common utilities
-from common.adaptive_rate_limiter import AdaptiveRateLimiter, ExtractorType
-from common.parameter_store import get_alpha_vantage_key
-from common.s3_data_writer import create_s3_writer
-from common.symbol_id_calculator import calculate_symbol_id
+# Import common utilities (handle both local and Lambda environments)
+try:
+    from common.adaptive_rate_limiter import AdaptiveRateLimiter, ExtractorType
+    from common.parameter_store import get_alpha_vantage_key
+    from common.s3_data_writer import create_s3_writer
+    from common.symbol_id_calculator import calculate_symbol_id
+except ImportError:
+    # For Lambda deployment where common modules are in the same directory
+    from adaptive_rate_limiter import AdaptiveRateLimiter, ExtractorType
+    from parameter_store import get_alpha_vantage_key
+    from s3_data_writer import create_s3_writer
+    from symbol_id_calculator import calculate_symbol_id
 
 
 class OverviewExtractorLambda:
