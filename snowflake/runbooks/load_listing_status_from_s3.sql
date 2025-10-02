@@ -12,7 +12,7 @@ SET FILE_NAME = 'listing_status_' || $LOAD_DATE || '.csv';
 
 -- 1) Create stage if needed
 CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGE
-  URL='s3://fin-trade-craft-landing/'
+  URL='s3://fin-trade-craft-landing/listing_status/'
   STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION;
 
 
@@ -34,7 +34,7 @@ SELECT * FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS WHERE 1=0;
 
 -- Use a named file format for compatibility
 COPY INTO FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING
-FROM @LISTING_STATUS_STAGE/$S3_PREFIX
+FROM @LISTING_STATUS_STAGE
 FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT
 PATTERN = '.*listing_status_' || $LOAD_DATE || '\\.csv'
 ON_ERROR = 'CONTINUE';
