@@ -41,7 +41,7 @@ SELECT * FROM RAW.LISTING_STATUS_STAGING LIMIT 10;
 -- 4) Merge into final table (upsert by symbol)
 MERGE INTO RAW.LISTING_STATUS tgt
 USING RAW.LISTING_STATUS_STAGING src
-ON tgt.symbol = src.symbol
+ON UPPER(TRIM(tgt.symbol)) = UPPER(TRIM(src.symbol))
 WHEN MATCHED THEN UPDATE SET
   name = src.name,
   exchange = src.exchange,
