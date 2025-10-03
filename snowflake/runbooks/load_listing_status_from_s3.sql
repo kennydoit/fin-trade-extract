@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.LISTING_STATUS (
   assetType VARCHAR,
   ipoDate VARCHAR,
   delistingDate VARCHAR,
-  status VARCHAR
+  status VARCHAR,
+  load_date DATE
 );
 
 
@@ -45,6 +46,10 @@ ON_ERROR = CONTINUE;
 -- FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
 -- ON_ERROR = CONTINUE;
 
+-- Add load_date to staging data
+ALTER TABLE FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING ADD COLUMN load_date DATE;
+UPDATE FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING SET load_date = TO_DATE($LOAD_DATE, 'YYYYMMDD');
+
 -- Remove bad rows
 DELETE FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING WHERE symbol IS NULL OR symbol = '#NAME?';
 
@@ -60,11 +65,12 @@ WHEN MATCHED THEN UPDATE SET
   assetType = src.assetType,
   ipoDate = src.ipoDate,
   delistingDate = src.delistingDate,
-  status = src.status
+  status = src.status,
+  load_date = src.load_date
 WHEN NOT MATCHED THEN INSERT (
-  symbol, name, exchange, assetType, ipoDate, delistingDate, status
+  symbol, name, exchange, assetType, ipoDate, delistingDate, status, load_date
 ) VALUES (
-  src.symbol, src.name, src.exchange, src.assetType, src.ipoDate, src.delistingDate, src.status
+  src.symbol, src.name, src.exchange, src.assetType, src.ipoDate, src.delistingDate, src.status, src.load_date
 );
 
 -- 5) Verify
