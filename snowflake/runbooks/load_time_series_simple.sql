@@ -29,13 +29,10 @@ SELECT COUNT(*) as rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJU
 UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING SET load_date = TO_DATE($LOAD_DATE, 'YYYYMMDD');
 
 -- Extract symbol from filename metadata (Snowflake automatically tracks source file)
+-- Extract symbol from filename metadata (Snowflake automatically tracks source file)
 UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING 
 SET symbol = REGEXP_SUBSTR(METADATA$FILENAME, 'time_series_daily_adjusted_([A-Z0-9]+)_', 1, 1, 'e', 1)
 WHERE symbol IS NULL;
-
-SELECT COUNT(*) as rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
-
-DELETE FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING WHERE symbol IS NULL OR date IS NULL OR close IS NULL;
 
 -- Debug: Check data before cleanup
 SELECT COUNT(*) as rows_before_cleanup FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
