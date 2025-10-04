@@ -14,9 +14,12 @@ SET FILE_NAME = 'time_series_daily_adjusted_' || $SYMBOL || '_' || $LOAD_DATE ||
 -- Debug: Check what files are in the stage
 LIST @TIME_SERIES_STAGE;
 
+-- Debug: Show what file we're looking for
+SELECT 'Looking for file: ' || $FILE_NAME as debug_info;
+
 -- 1) Create stage if needed
 CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE
-  URL='s3://fin-trade-craft-landing/time_series_daily_adjusted/'
+  URL='s3://fin-trade-craft-landing/'
   STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION;
 
 -- 2) Create table if needed (run the schema file first)
@@ -64,7 +67,7 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUST
 
 -- Debug: Try to read the file directly
 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 
-FROM @TIME_SERIES_STAGE/$FILE_NAME
+FROM @TIME_SERIES_STAGE/$S3_PREFIX$FILE_NAME
 (FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT) 
 LIMIT 5;
 
@@ -83,10 +86,13 @@ FROM (
     $7::NUMBER(20,0),           -- volume
     $8::NUMBER(15,6),           -- dividend_amount
     $9::NUMBER(10,6)            -- split_coefficient
-  FROM @TIME_SERIES_STAGE/$FILE_NAME
+  FROM @TIME_SERIES_STAGE/$S3_PREFIX$FILE_NAME
 )
 FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT
 ON_ERROR = 'CONTINUE';
+
+-- Debug: Check copy results
+SELECT SYSTEM$LAST_QUERY_ID() as last_query_id;
 
 -- Debug: Check how many rows were loaded
 SELECT COUNT(*) as rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
