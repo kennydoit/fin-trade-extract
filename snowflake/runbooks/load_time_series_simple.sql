@@ -17,8 +17,22 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUST
 LIST @TIME_SERIES_STAGE;
 
 -- Load ALL CSV files from the time series stage (supports multiple symbols)
-COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (date, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient)
-FROM @TIME_SERIES_STAGE
+-- CSV columns: timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient
+COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (symbol, date, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient)
+FROM (
+    SELECT 
+        REGEXP_SUBSTR(METADATA$FILENAME, 'time_series_daily_adjusted_([A-Z0-9]+)_', 1, 1, 'e', 1) as symbol,
+        TO_DATE($1, 'YYYY-MM-DD') as date,
+        $2::NUMBER(15,4) as open,
+        $3::NUMBER(15,4) as high, 
+        $4::NUMBER(15,4) as low,
+        $5::NUMBER(15,4) as close,
+        $6::NUMBER(15,4) as adjusted_close,
+        $7::NUMBER(20,0) as volume,
+        $8::NUMBER(15,6) as dividend_amount,
+        $9::NUMBER(10,6) as split_coefficient
+    FROM @TIME_SERIES_STAGE
+)
 FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
 PATTERN = '.*\.csv'
 ON_ERROR = CONTINUE;
@@ -26,13 +40,8 @@ ON_ERROR = CONTINUE;
 -- Debug: Check how many rows were loaded
 SELECT COUNT(*) as rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
 
+-- Set load_date for all records (this column doesn't exist in source CSV)
 UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING SET load_date = TO_DATE($LOAD_DATE, 'YYYYMMDD');
-
--- Extract symbol from filename metadata (Snowflake automatically tracks source file)
--- Extract symbol from filename metadata (Snowflake automatically tracks source file)
-UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING 
-SET symbol = REGEXP_SUBSTR(METADATA$FILENAME, 'time_series_daily_adjusted_([A-Z0-9]+)_', 1, 1, 'e', 1)
-WHERE symbol IS NULL;
 
 -- Debug: Check data before cleanup
 SELECT COUNT(*) as rows_before_cleanup FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
