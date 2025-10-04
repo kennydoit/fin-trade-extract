@@ -62,9 +62,11 @@ def fetch_time_series_data(symbol, api_key, *, max_retries=5, backoff_seconds=15
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
 
-            if response.headers.get("content-type", "").startswith("text/csv"):
+            # Check if response looks like CSV (starts with expected header)
+            response_text = response.text.strip()
+            if response_text.startswith('timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient'):
                 print(f"Successfully fetched time series data for {symbol}")
-                return response.text
+                return response_text
 
             # Alpha Vantage sometimes responds with JSON (rate limiting, errors).
             error_message = _parse_alpha_vantage_error(response)
