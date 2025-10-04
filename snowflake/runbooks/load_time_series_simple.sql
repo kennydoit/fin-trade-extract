@@ -22,7 +22,7 @@ LIST @TIME_SERIES_STAGE;
 
 SELECT 'Looking for file: ' || $S3_PREFIX || $FILE_NAME as debug_info;
 
-COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (symbol, date, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient) FROM @TIME_SERIES_STAGE FILES = ($S3_PREFIX || $FILE_NAME) FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT) ON_ERROR = CONTINUE;
+COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (date, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient) FROM @TIME_SERIES_STAGE FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT) FILES = ('time_series_daily_adjusted/time_series_daily_adjusted_AAPL_20251004.csv') ON_ERROR = CONTINUE;
 
 UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING SET load_date = TO_DATE($LOAD_DATE, 'YYYYMMDD');
 
