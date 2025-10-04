@@ -1,4 +1,4 @@
-name: Fetch Time Series Daily Adjusted Data
+name: Time Series Daily Adjusted ETL
 
 on:
   workflow_dispatch:
@@ -8,29 +8,18 @@ on:
         required: true
         type: string
         default: 'AAPL'
-      load_date:
-        description: 'Load date (YYYYMMDD format, defaults to today)'
-        required: false
-        type: string
   schedule:
     # Run daily at 7 PM EST (after market close) for major symbols
     - cron: '0 23 * * 1-5'  # Monday-Friday at 11 PM UTC
 
-env:
-  ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
-  S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-  SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-  SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-  SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
-  SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
-
 jobs:
-  fetch-time-series-data:
-    runs-on: ubuntu-latest
+  time-series-etl:
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PYTHONUNBUFFERED: '1'
     
     strategy:
       matrix:
@@ -40,7 +29,7 @@ jobs:
       max-parallel: 2   # Limit parallel jobs to respect API rate limits
     
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
 
     - name: Set up Python
@@ -48,39 +37,41 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install Python dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests boto3 snowflake-connector-python
+        pip install -r scripts/github_actions/requirements.txt
 
-    - name: Set load date
-      id: set-date
-      run: |
-        if [ -n "${{ github.event.inputs.load_date }}" ]; then
-          echo "LOAD_DATE=${{ github.event.inputs.load_date }}" >> $GITHUB_ENV
-        else
-          echo "LOAD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
-        fi
-        echo "Load date set to: $LOAD_DATE"
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        aws-region: ${{ secrets.AWS_REGION }}
 
     - name: Fetch time series data and upload to S3
       env:
+        ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+        AWS_REGION: ${{ secrets.AWS_REGION }}
+        S3_BUCKET: fin-trade-craft-landing
+        S3_TIME_SERIES_PREFIX: time_series_daily_adjusted/
         SYMBOL: ${{ matrix.symbol }}
-        LOAD_DATE: ${{ env.LOAD_DATE }}
       run: |
-        echo "Fetching TIME_SERIES_DAILY_ADJUSTED data for $SYMBOL on $LOAD_DATE"
-        python scripts/fetch_time_series_to_s3.py
+        python scripts/github_actions/fetch_time_series_to_s3.py
 
-    - name: Load data into Snowflake
+    - name: Load time series data into Snowflake
       env:
+        SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+        SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+        SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
         SYMBOL: ${{ matrix.symbol }}
-        LOAD_DATE: ${{ env.LOAD_DATE }}
       run: |
-        echo "Loading $SYMBOL data into Snowflake for date $LOAD_DATE"
-        
         # Create a temporary SQL file with variables substituted
-        sed -e "s/SET LOAD_DATE = '20251003';/SET LOAD_DATE = '$LOAD_DATE';/" \
-            -e "s/SET SYMBOL = 'AAPL';/SET SYMBOL = '$SYMBOL';/" \
+        TODAY=$(date +%Y%m%d)
+        sed -e "s/SET LOAD_DATE = '20251003';/SET LOAD_DATE = '$TODAY';/" \
+            -e "s/SET SYMBOL = 'AAPL';/SET SYMBOL = '${{ matrix.symbol }}';/" \
             snowflake/runbooks/load_time_series_from_s3.sql > temp_load_script.sql
         
         # Run the SQL script
@@ -89,46 +80,3 @@ jobs:
         # Clean up temp file
         rm temp_load_script.sql
 
-    - name: Verify data load
-      env:
-        SYMBOL: ${{ matrix.symbol }}
-        LOAD_DATE: ${{ env.LOAD_DATE }}
-      run: |
-        echo "Verifying data load for $SYMBOL on $LOAD_DATE"
-        
-        # Create verification query
-        cat > verify_load.sql << EOF
-        USE DATABASE FIN_TRADE_EXTRACT;
-        USE SCHEMA RAW;
-        USE WAREHOUSE FIN_TRADE_WH;
-        USE ROLE ETL_ROLE;
-        
-        SELECT 
-          '$SYMBOL' as symbol_checked,
-          '$LOAD_DATE' as load_date_checked,
-          COUNT(*) as total_records,
-          COUNT(CASE WHEN load_date = TO_DATE('$LOAD_DATE', 'YYYYMMDD') THEN 1 END) as new_records,
-          MAX(date) as latest_date,
-          MIN(date) as earliest_date
-        FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED 
-        WHERE symbol = '$SYMBOL';
-        EOF
-        
-        python scripts/github_actions/snowflake_run_sql_file.py verify_load.sql
-        rm verify_load.sql
-
-  summary:
-    needs: fetch-time-series-data
-    runs-on: ubuntu-latest
-    if: always()  # Run even if some jobs failed
-    
-    steps:
-    - name: Job Summary
-      run: |
-        echo "## Time Series Data Fetch Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- **Workflow**: ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Date**: ${{ env.LOAD_DATE || 'Auto-generated' }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Symbols**: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.symbol || 'AAPL, MSFT, GOOGL, AMZN, TSLA' }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "Check individual job results above for detailed status." >> $GITHUB_STEP_SUMMARY

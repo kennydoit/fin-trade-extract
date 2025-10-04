@@ -8,7 +8,7 @@ USE ROLE ETL_ROLE;
 
 -- Create stage for time series data if needed
 CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE
-  URL='s3://fin-trade-craft-landing/time_series/'
+  URL='s3://fin-trade-craft-landing/time_series_daily_adjusted/'
   STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION;
 
 -- Create main time series table with Snowflake data types

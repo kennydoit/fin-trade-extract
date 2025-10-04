@@ -4,15 +4,14 @@ Fetch Alpha Vantage TIME_SERIES_DAILY_ADJUSTED data for a specific symbol and up
 Simplified version focused on GitHub Actions workflow integration.
 """
 
-import csv
 import os
 import sys
 from datetime import datetime
 from io import StringIO
+import csv
 
 import boto3
 import requests
-from botocore.exceptions import ClientError
 
 
 def fetch_time_series_data(symbol, api_key):
@@ -97,7 +96,7 @@ def validate_csv_data(csv_data, symbol):
         return False
 
 
-def upload_to_s3(csv_data, symbol, load_date, bucket_name, aws_access_key_id, aws_secret_access_key):
+def upload_to_s3(csv_data, symbol, load_date, bucket, s3_prefix, region):
     """
     Upload CSV data to S3.
     
@@ -105,29 +104,25 @@ def upload_to_s3(csv_data, symbol, load_date, bucket_name, aws_access_key_id, aw
         csv_data: CSV string to upload
         symbol: Stock symbol 
         load_date: Date for the filename (YYYYMMDD format)
-        bucket_name: S3 bucket name
-        aws_access_key_id: AWS access key
-        aws_secret_access_key: AWS secret key
+        bucket: S3 bucket name
+        s3_prefix: S3 prefix/folder
+        region: AWS region
         
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Create S3 client
-        s3_client = boto3.client(
-            's3',
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key
-        )
-        
         # Generate S3 key (file path)
-        s3_key = f"time_series/time_series_daily_adjusted_{symbol}_{load_date}.csv"
+        s3_key = f"{s3_prefix}time_series_daily_adjusted_{symbol}_{load_date}.csv"
         
-        print(f"Uploading to S3: s3://{bucket_name}/{s3_key}")
+        print(f"Uploading to S3: s3://{bucket}/{s3_key}")
+        
+        # Create S3 client (uses AWS credentials from environment/OIDC)
+        s3_client = boto3.client('s3', region_name=region)
         
         # Upload the CSV data
         s3_client.put_object(
-            Bucket=bucket_name,
+            Bucket=bucket,
             Key=s3_key,
             Body=csv_data.encode('utf-8'),
             ContentType='text/csv'
@@ -136,11 +131,8 @@ def upload_to_s3(csv_data, symbol, load_date, bucket_name, aws_access_key_id, aw
         print(f"Successfully uploaded {symbol} data to S3")
         return True
         
-    except ClientError as e:
-        print(f"S3 upload failed for {symbol}: {e}")
-        return False
     except Exception as e:
-        print(f"Unexpected error uploading {symbol}: {e}")
+        print(f"S3 upload failed for {symbol}: {e}")
         return False
 
 
@@ -150,15 +142,15 @@ def main():
     # Get required environment variables
     symbol = os.environ.get('SYMBOL')
     api_key = os.environ.get('ALPHAVANTAGE_API_KEY')
-    bucket_name = os.environ.get('S3_BUCKET_NAME')
-    aws_access_key_id = os.environ.get('AWS_ACCESS_KEY_ID')
-    aws_secret_access_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
+    bucket = os.environ.get('S3_BUCKET')
+    s3_prefix = os.environ.get('S3_TIME_SERIES_PREFIX', 'time_series_daily_adjusted/')
+    region = os.environ.get('AWS_REGION', 'us-east-1')
     load_date = os.environ.get('LOAD_DATE', datetime.now().strftime('%Y%m%d'))
     
     # Validate required parameters
-    if not all([symbol, api_key, bucket_name, aws_access_key_id, aws_secret_access_key]):
+    if not all([symbol, api_key, bucket]):
         print("Error: Missing required environment variables")
-        print("Required: SYMBOL, ALPHAVANTAGE_API_KEY, S3_BUCKET_NAME, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY")
+        print("Required: SYMBOL, ALPHAVANTAGE_API_KEY, S3_BUCKET")
         sys.exit(1)
     
     print(f"Starting time series extraction for symbol: {symbol}")
@@ -176,7 +168,7 @@ def main():
         sys.exit(1)
     
     # Upload to S3
-    success = upload_to_s3(csv_data, symbol, load_date, bucket_name, aws_access_key_id, aws_secret_access_key)
+    success = upload_to_s3(csv_data, symbol, load_date, bucket, s3_prefix, region)
     if not success:
         print(f"Failed to upload {symbol} data to S3")
         sys.exit(1)

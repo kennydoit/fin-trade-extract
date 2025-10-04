@@ -8,7 +8,7 @@ USE ROLE ETL_ROLE;
 
 SET LOAD_DATE = '20251003';
 SET SYMBOL = 'AAPL';
-SET S3_PREFIX = 'time_series/';
+SET S3_PREFIX = 'time_series_daily_adjusted/';
 SET FILE_NAME = 'time_series_daily_adjusted_' || $SYMBOL || '_' || $LOAD_DATE || '.csv';
 
 -- Debug: Check what files are in the stage
@@ -16,7 +16,7 @@ LIST @TIME_SERIES_STAGE;
 
 -- 1) Create stage if needed
 CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE
-  URL='s3://fin-trade-craft-landing/time_series/'
+  URL='s3://fin-trade-craft-landing/time_series_daily_adjusted/'
   STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION;
 
 -- 2) Create table if needed (run the schema file first)
