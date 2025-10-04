@@ -64,9 +64,8 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUST
 
 -- Debug: Try to read the file directly
 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 
-FROM @TIME_SERIES_STAGE
+FROM @TIME_SERIES_STAGE/$FILE_NAME
 (FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT) 
-PATTERN = '.*time_series_daily_adjusted_' || $SYMBOL || '_' || $LOAD_DATE || '\\.csv'
 LIMIT 5;
 
 -- Copy data from S3 into staging table
@@ -84,10 +83,9 @@ FROM (
     $7::NUMBER(20,0),           -- volume
     $8::NUMBER(15,6),           -- dividend_amount
     $9::NUMBER(10,6)            -- split_coefficient
-  FROM @TIME_SERIES_STAGE
+  FROM @TIME_SERIES_STAGE/$FILE_NAME
 )
 FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT
-PATTERN = '.*time_series_daily_adjusted_' || $SYMBOL || '_' || $LOAD_DATE || '\\.csv'
 ON_ERROR = 'CONTINUE';
 
 -- Debug: Check how many rows were loaded
