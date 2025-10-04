@@ -20,20 +20,28 @@ jobs:
       contents: read
     env:
       PYTHONUNBUFFERED: '1'
+    strategy:
+      matrix:
+        symbol: 
+          - AAPL
+          # Add more symbols as needed:
+          # - MSFT
+          # - GOOGL
+          # - AMZN
+          # - TSLA
     
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Resolve symbol
-      env:
-        DEFAULT_SYMBOL: AAPL
+    - name: Set symbol from matrix or input
       run: |
+        # Use matrix symbol by default, but allow manual override via input
         symbol="${{ inputs.symbol }}"
         if [ -z "$symbol" ]; then
-          symbol="$DEFAULT_SYMBOL"
+          symbol="${{ matrix.symbol }}"
         fi
-        echo "Using symbol: $symbol"
+        echo "Processing symbol: $symbol"
         echo "SYMBOL=$symbol" >> "$GITHUB_ENV"
 
     - name: Set up Python
@@ -52,17 +60,12 @@ jobs:
         role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
         aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Fetch time series data and upload to S3
+    - name: Fetch and load time series data (direct to Snowflake)
       env:
         ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
         AWS_REGION: ${{ secrets.AWS_REGION }}
         S3_BUCKET: fin-trade-craft-landing
         S3_TIME_SERIES_PREFIX: time_series_daily_adjusted/
-      run: |
-        python scripts/github_actions/fetch_time_series_to_s3.py
-
-    - name: Load time series data into Snowflake
-      env:
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
         SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
@@ -70,5 +73,5 @@ jobs:
         SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
       run: |
-        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_time_series_simple.sql
+        python scripts/github_actions/fetch_and_load_time_series.py
 
