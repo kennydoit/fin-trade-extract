@@ -92,7 +92,7 @@ FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT
 ON_ERROR = 'CONTINUE';
 
 -- Debug: Check copy results
-SELECT SYSTEM$LAST_QUERY_ID() as last_query_id;
+SELECT LAST_QUERY_ID() as last_query_id;
 
 -- Debug: Check how many rows were loaded
 SELECT COUNT(*) as rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
