@@ -6,15 +6,21 @@ def run_sql_file(sql_path, ctx):
     with open(sql_path, 'r') as f:
         sql = f.read()
     
-    # Split on semicolons and filter out empty/comment-only statements
+    # Remove comment lines first
+    lines = []
+    for line in sql.split('\n'):
+        line = line.strip()
+        if line and not line.startswith('--'):
+            lines.append(line)
+    
+    # Join back and split on semicolons
+    clean_sql = ' '.join(lines)
+    
+    # Split on semicolons and filter out empty statements
     statements = []
-    for stmt in sql.split(';'):
+    for stmt in clean_sql.split(';'):
         stmt = stmt.strip()
-        if not stmt:
-            continue
-        # Remove comments and check if there's actual SQL content
-        lines = [line.strip() for line in stmt.split('\n') if line.strip() and not line.strip().startswith('--')]
-        if lines:
+        if stmt:
             statements.append(stmt)
     
     for stmt in statements:
