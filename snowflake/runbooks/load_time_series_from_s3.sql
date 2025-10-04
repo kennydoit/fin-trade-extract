@@ -1,4 +1,10 @@
--- Load/merge Alpha Vantage TIME_SERIES_DAILY_ADJUSTED from S3 into-- Debug: Try to read the f  FROM @TIME_SERIES_STAGE
+-- Load/merge Alpha Vantage TIME_SERIES_DAILY_ADJUSTED from S3 into-- Debug: Try t-- Copy data from S3 into staging table - using exact working pattern from listing_status
+COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (
+  date, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient
+)
+FROM @TIME_SERIES_STAGE/$S3_PREFIX$FILE_NAME
+(FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT)
+ON_ERROR = 'CONTINUE';TIME_SERIES_STAGE
 )
 FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT
 FILES = ($S3_PREFIX || $FILE_NAME)
@@ -74,11 +80,10 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUST
   load_date DATE
 );
 
--- Debug: Try to read the file directly using FILES
+-- Debug: Try to read the file directly
 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 
-FROM @TIME_SERIES_STAGE
+FROM @TIME_SERIES_STAGE/$S3_PREFIX$FILE_NAME
 (FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT) 
-FILES = ($S3_PREFIX || $FILE_NAME)
 LIMIT 5;
 
 -- Copy data from S3 into staging table
