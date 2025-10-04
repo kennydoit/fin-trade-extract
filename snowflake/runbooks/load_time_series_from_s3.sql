@@ -1,9 +1,7 @@
 -- Load/merge Alpha Vantage TIME_SERIES_DAILY_ADJUSTED from S3 into-- Debug: Try t-- Copy data from S3 into staging table - using exact working pattern from listing_status
-COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (
-  date, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient
-)
+COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (date, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient)
 FROM @TIME_SERIES_STAGE/$S3_PREFIX$FILE_NAME
-(FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT)
+FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT
 ON_ERROR = 'CONTINUE';TIME_SERIES_STAGE
 )
 FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT
