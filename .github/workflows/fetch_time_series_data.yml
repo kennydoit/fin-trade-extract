@@ -70,9 +70,9 @@ jobs:
       run: |
         # Create a temporary SQL file with variables substituted
         TODAY=$(date +%Y%m%d)
-        sed -e "s/SET LOAD_DATE = '20251003';/SET LOAD_DATE = '$TODAY';/" \
+        sed -e "s/SET LOAD_DATE = '20251004';/SET LOAD_DATE = '$TODAY';/" \
             -e "s/SET SYMBOL = 'AAPL';/SET SYMBOL = '${{ matrix.symbol }}';/" \
-            snowflake/runbooks/load_time_series_from_s3.sql > temp_load_script.sql
+            snowflake/runbooks/load_time_series_simple.sql > temp_load_script.sql
         
         # Run the SQL script
         python scripts/github_actions/snowflake_run_sql_file.py temp_load_script.sql
