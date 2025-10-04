@@ -6,6 +6,7 @@ Simplified version focused on GitHub Actions workflow integration.
 
 import os
 import sys
+import time
 from datetime import datetime
 from io import StringIO
 import csv
@@ -14,14 +15,34 @@ import boto3
 import requests
 
 
-def fetch_time_series_data(symbol, api_key):
+def _parse_alpha_vantage_error(response):
+    """Extract Alpha Vantage error messages from a response."""
+
+    # Alpha Vantage rate limits return JSON payloads with helpful keys. We try to
+    # surface those to aid debugging rather than failing with a generic CSV
+    # validation error later in the flow.
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+
+    if isinstance(payload, dict):
+        for key in ("Note", "Information", "Error Message", "message"):
+            if payload.get(key):
+                return payload[key]
+    return None
+
+
+def fetch_time_series_data(symbol, api_key, *, max_retries=5, backoff_seconds=15):
     """
     Fetch TIME_SERIES_DAILY_ADJUSTED data from Alpha Vantage API.
-    
+
     Args:
         symbol: Stock symbol (e.g., 'AAPL')
         api_key: Alpha Vantage API key
-        
+        max_retries: Maximum number of attempts before giving up
+        backoff_seconds: Base seconds to wait between retries (multiplied by attempt)
+
     Returns:
         CSV string with time series data
     """
@@ -36,22 +57,33 @@ def fetch_time_series_data(symbol, api_key):
     
     print(f"Fetching TIME_SERIES_DAILY_ADJUSTED data for {symbol}...")
     
-    try:
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        
-        # Check if we got CSV data (successful response)
-        if response.headers.get("content-type", "").startswith("text/csv") or "timestamp" in response.text.lower():
-            print(f"Successfully fetched time series data for {symbol}")
-            return response.text
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+
+            if response.headers.get("content-type", "").startswith("text/csv"):
+                print(f"Successfully fetched time series data for {symbol}")
+                return response.text
+
+            # Alpha Vantage sometimes responds with JSON (rate limiting, errors).
+            error_message = _parse_alpha_vantage_error(response)
+            if error_message:
+                print(f"Alpha Vantage returned an error for {symbol}: {error_message}")
+            else:
+                print(f"Unexpected response for {symbol}: {response.text[:200]}")
+
+        except requests.exceptions.RequestException as e:
+            print(f"Request failed for {symbol}: {e}")
+
+        if attempt < max_retries:
+            sleep_for = backoff_seconds * attempt
+            print(f"Retrying in {sleep_for} seconds (attempt {attempt}/{max_retries})...")
+            time.sleep(sleep_for)
         else:
-            # Might be JSON error response
-            print(f"Error response for {symbol}: {response.text[:200]}")
-            return None
-            
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed for {symbol}: {e}")
-        return None
+            print(f"Exceeded maximum retries ({max_retries}) for {symbol}")
+
+    return None
 
 
 def validate_csv_data(csv_data, symbol):
