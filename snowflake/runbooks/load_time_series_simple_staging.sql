@@ -4,11 +4,29 @@
 USE DATABASE FIN_TRADE_EXTRACT;
 USE SCHEMA RAW;
 
--- 1) List files in stage to verify content
+-- 1) Create external stage pointing to S3 time series folder
+CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE
+  URL='s3://fin-trade-craft-landing/time_series_daily_adjusted/'
+  STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION
+  FILE_FORMAT = (
+    TYPE = 'CSV'
+    FIELD_DELIMITER = ','
+    RECORD_DELIMITER = '\n'
+    SKIP_HEADER = 1
+    NULL_IF = ('NULL', 'null', '')
+    EMPTY_FIELD_AS_NULL = TRUE
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+    TRIM_SPACE = TRUE
+    ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE
+  );
+
+-- 2) List files in stage to verify content
 LIST @TIME_SERIES_STAGE;
 
--- 2) Create main table matching current listing_status pattern (no SYMBOL_ID)
-CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (
+-- 3) Create main table matching current listing_status pattern (no SYMBOL_ID)
+-- Force drop and recreate to ensure proper schema
+DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED;
+CREATE TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (
     SYMBOL            VARCHAR(20) NOT NULL,
     DATE              DATE NOT NULL,
     OPEN              NUMBER(15,4),
@@ -27,7 +45,7 @@ CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (
 COMMENT = 'Daily adjusted time series data from Alpha Vantage API'
 CLUSTER BY (DATE, SYMBOL);
 
--- 3) Create staging table (transient for performance) 
+-- 4) Create staging table (transient for performance) 
 CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING (
   symbol VARCHAR(20),
   date DATE,
@@ -42,7 +60,7 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING (
   source_filename VARCHAR(500)  -- Track which file each row came from
 );
 
--- 4) Load data directly into staging table
+-- 5) Load data directly into staging table
 COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING (
     date, 
     open, 
@@ -75,7 +93,7 @@ ON_ERROR = CONTINUE;
 -- Debug: Check staging data load
 SELECT COUNT(*) as staging_rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING;
 
--- 5) Extract symbol from filename
+-- 6) Extract symbol from filename
 UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
 SET symbol = REGEXP_SUBSTR(source_filename, 'time_series_daily_adjusted_([A-Z0-9]+)_', 1, 1, 'e', 1)
 WHERE symbol IS NULL;
@@ -91,7 +109,7 @@ FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING
 GROUP BY symbol, source_filename
 ORDER BY symbol;
 
--- 6) Load from staging to final table (simple pattern matching listing_status)
+-- 7) Load from staging to final table (simple pattern matching listing_status)
 MERGE INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED AS target
 USING (
     SELECT 
