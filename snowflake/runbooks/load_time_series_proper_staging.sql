@@ -1,6 +1,8 @@
 -- Load Alpha Vantage TIME_SERIES_DAILY_ADJUSTED from S3 using proper staging pattern
 -- This follows the same proven approach as listing_status but adapted for time series data
 
+DROP STAGE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE;
+
 USE DATABASE FIN_TRADE_EXTRACT;
 USE SCHEMA RAW;
 USE WAREHOUSE FIN_TRADE_WH;
@@ -60,6 +62,12 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUST
 -- Debug: Check what files are available in the stage
 LIST @TIME_SERIES_STAGE;
 
+-- Debug: Check stage configuration
+DESCRIBE STAGE TIME_SERIES_STAGE;
+
+-- Debug: Try to list with pattern
+LIST @TIME_SERIES_STAGE PATTERN = '*.csv';
+
 -- Debug: Preview the first few rows from files to understand structure
 SELECT 
     $1 as timestamp_raw,
@@ -76,8 +84,47 @@ SELECT
 FROM @TIME_SERIES_STAGE
 LIMIT 10;
 
--- 4) Load data from S3 into staging table using proper column mapping
-COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (
+-- 4) First create a temporary staging table to hold raw string data
+CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_RAW_STAGING (
+  timestamp_raw VARCHAR(50),
+  open_raw VARCHAR(50),
+  high_raw VARCHAR(50),
+  low_raw VARCHAR(50),
+  close_raw VARCHAR(50),
+  adjusted_close_raw VARCHAR(50),
+  volume_raw VARCHAR(50),
+  dividend_amount_raw VARCHAR(50),
+  split_coefficient_raw VARCHAR(50),
+  source_filename VARCHAR(500)
+);
+
+-- 5) Load raw data from S3 into temporary staging table (simple COPY)
+COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_RAW_STAGING (
+    timestamp_raw, 
+    open_raw, 
+    high_raw, 
+    low_raw, 
+    close_raw, 
+    adjusted_close_raw, 
+    volume_raw, 
+    dividend_amount_raw, 
+    split_coefficient_raw,
+    source_filename
+)
+FROM (
+    SELECT 
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, METADATA$FILENAME
+    FROM @TIME_SERIES_STAGE
+)
+PATTERN = '*.csv'
+ON_ERROR = CONTINUE;
+
+-- Debug: Check raw data load
+SELECT COUNT(*) as raw_rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_RAW_STAGING;
+SELECT source_filename, COUNT(*) FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_RAW_STAGING GROUP BY source_filename;
+
+-- 6) Transform and load into proper staging table with data type conversions
+INSERT INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (
     date, 
     open, 
     high, 
@@ -89,25 +136,23 @@ COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (
     split_coefficient,
     source_filename
 )
-FROM (
-    SELECT 
-        TO_DATE($1, 'YYYY-MM-DD') as date,
-        TRY_CAST($2 AS NUMBER(15,4)) as open,
-        TRY_CAST($3 AS NUMBER(15,4)) as high,
-        TRY_CAST($4 AS NUMBER(15,4)) as low,
-        TRY_CAST($5 AS NUMBER(15,4)) as close,
-        TRY_CAST($6 AS NUMBER(15,4)) as adjusted_close,
-        TRY_CAST($7 AS NUMBER(20,0)) as volume,
-        TRY_CAST($8 AS NUMBER(15,6)) as dividend_amount,
-        TRY_CAST($9 AS NUMBER(10,6)) as split_coefficient,
-        METADATA$FILENAME as source_filename
-    FROM @TIME_SERIES_STAGE
-    WHERE METADATA$FILENAME LIKE '%.csv'
-)
-ON_ERROR = CONTINUE;
+SELECT 
+    TRY_TO_DATE(timestamp_raw, 'YYYY-MM-DD') as date,
+    TRY_TO_NUMBER(open_raw, 15, 4) as open,
+    TRY_TO_NUMBER(high_raw, 15, 4) as high,
+    TRY_TO_NUMBER(low_raw, 15, 4) as low,
+    TRY_TO_NUMBER(close_raw, 15, 4) as close,
+    TRY_TO_NUMBER(adjusted_close_raw, 15, 4) as adjusted_close,
+    TRY_TO_NUMBER(volume_raw, 20, 0) as volume,
+    TRY_TO_NUMBER(dividend_amount_raw, 15, 6) as dividend_amount,
+    TRY_TO_NUMBER(split_coefficient_raw, 10, 6) as split_coefficient,
+    source_filename
+FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_RAW_STAGING
+WHERE timestamp_raw IS NOT NULL 
+  AND timestamp_raw != 'timestamp'  -- Skip header row if it gets through
 
--- Debug: Check load results
-SELECT COUNT(*) as rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
+-- Debug: Check transformed data load
+SELECT COUNT(*) as transformed_rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
 SELECT 
     source_filename,
     COUNT(*) as row_count,
@@ -117,7 +162,7 @@ FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING
 GROUP BY source_filename 
 ORDER BY source_filename;
 
--- 5) Extract symbol from filename and set load_date
+-- 7) Extract symbol from filename and set load_date
 UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING 
 SET symbol = REGEXP_SUBSTR(source_filename, 'time_series_daily_adjusted_([A-Z0-9]+)_', 1, 1, 'e', 1)
 WHERE symbol IS NULL;
@@ -138,7 +183,7 @@ FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING
 GROUP BY symbol 
 ORDER BY symbol;
 
--- 6) Data quality validation - remove bad records
+-- 8) Data quality validation - remove bad records
 DELETE FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING 
 WHERE symbol IS NULL 
    OR date IS NULL 
@@ -157,7 +202,7 @@ FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING
 GROUP BY symbol 
 ORDER BY symbol;
 
--- 7) Merge staging data into final table (upsert pattern)
+-- 9) Merge staging data into final table (upsert pattern)
 MERGE INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED tgt
 USING FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING src
 ON tgt.symbol = src.symbol AND tgt.date = src.date
@@ -180,7 +225,7 @@ WHEN NOT MATCHED THEN INSERT (
   src.split_coefficient, src.load_date
 );
 
--- 8) Final verification and reporting
+-- 10) Final verification and reporting
 SELECT 
     'Final table summary' as report_type,
     symbol,
@@ -200,3 +245,6 @@ SELECT
     MAX(date) as latest_market_date,
     COUNT(DISTINCT load_date) as load_dates
 FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED;
+
+-- Clean up temporary raw staging table
+DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_RAW_STAGING;
