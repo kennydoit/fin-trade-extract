@@ -53,7 +53,7 @@ def fetch_time_series_data(symbol, api_key, *, max_retries=5, backoff_seconds=15
         "function": "TIME_SERIES_DAILY_ADJUSTED",
         "symbol": symbol,
         "datatype": "csv",
-        "outputsize": "compact",  # Last 100 data points (about 4 months)
+        "outputsize": "full",  # Full-length time series (20+ years of historical data)
         "apikey": api_key
     }
     

@@ -1,10 +1,11 @@
 -- ============================================================================
--- Load Time Series Data from S3 Stage - Simple Pattern (matching listing_status)
+-- Load Time Series Data from S3 Stage - Simple Pattern with Calculated Symbol ID
 -- *** RECOMMENDED APPROACH - USE THIS FILE ***
 -- 
--- This file implements the same simple pattern as listing_status:
--- - No symbol_id foreign keys  
--- - Simple SYMBOL VARCHAR primary key
+-- Features:
+-- - Calculated SYMBOL_ID column (hash-based, consistent with symbol)
+-- - Full historical data (20+ years from Alpha Vantage)
+-- - Simple SYMBOL VARCHAR + DATE unique constraint
 -- - Proper duplicate handling and data quality checks
 -- ============================================================================
 USE DATABASE FIN_TRADE_EXTRACT;
@@ -40,6 +41,7 @@ LIST @TIME_SERIES_STAGE;
 -- Force drop and recreate to ensure proper schema
 DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED;
 CREATE TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (
+    SYMBOL_ID         NUMBER(38,0),
     SYMBOL            VARCHAR(20) NOT NULL,
     DATE              DATE NOT NULL,
     OPEN              NUMBER(15,4),
@@ -61,6 +63,7 @@ CLUSTER BY (DATE, SYMBOL);
 -- 4) Create staging table (transient for performance) 
 CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING (
   symbol VARCHAR(20),
+  symbol_id NUMBER(38,0),  -- Will be calculated from symbol
   date DATE,
   open NUMBER(15,4),
   high NUMBER(15,4),
@@ -122,7 +125,21 @@ FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING
 GROUP BY symbol, source_filename
 ORDER BY symbol;
 
--- 7) Remove duplicates (keep most recent file's data for each symbol+date)
+-- 7) Calculate symbol_id using same logic as listing_status (hash-based approach)
+UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+SET symbol_id = ABS(HASH(symbol)) % 1000000000  -- Generate consistent ID from symbol
+WHERE symbol IS NOT NULL;
+
+-- Debug: Check symbol_id calculation
+SELECT 
+    symbol,
+    symbol_id,
+    COUNT(*) as row_count
+FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+GROUP BY symbol, symbol_id
+ORDER BY symbol;
+
+-- 8) Remove duplicates (keep most recent file's data for each symbol+date)
 DELETE FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
 WHERE (symbol, date, source_filename) IN (
     SELECT symbol, date, source_filename
@@ -137,9 +154,10 @@ WHERE (symbol, date, source_filename) IN (
     WHERE rn > 1
 );
 
--- 8) Data quality validation - remove bad records  
+-- 9) Data quality validation - remove bad records  
 DELETE FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
 WHERE symbol IS NULL 
+   OR symbol_id IS NULL
    OR date IS NULL 
    OR close IS NULL
    OR close <= 0
@@ -149,17 +167,19 @@ WHERE symbol IS NULL
 SELECT 
     'After cleanup' as stage,
     symbol,
+    symbol_id,
     COUNT(*) as clean_row_count,
     AVG(close) as avg_close_price,
     AVG(volume) as avg_volume
 FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
-GROUP BY symbol
+GROUP BY symbol, symbol_id
 ORDER BY symbol;
 
--- 9) Load from staging to final table (simple pattern matching listing_status)
+-- 10) Load from staging to final table with calculated symbol_id
 MERGE INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED AS target
 USING (
     SELECT 
+        staging.symbol_id,
         staging.symbol,
         staging.date,
         staging.open,
@@ -173,15 +193,16 @@ USING (
         CURRENT_DATE() as load_date
     FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING staging
     WHERE staging.symbol IS NOT NULL
+      AND staging.symbol_id IS NOT NULL
       AND staging.date IS NOT NULL
 ) AS source
 ON target.SYMBOL = source.symbol 
    AND target.DATE = source.date
 WHEN NOT MATCHED THEN
-    INSERT (SYMBOL, DATE, OPEN, HIGH, LOW, CLOSE, ADJUSTED_CLOSE, VOLUME, DIVIDEND_AMOUNT, SPLIT_COEFFICIENT, LOAD_DATE)
-    VALUES (source.symbol, source.date, source.open, source.high, source.low, source.close, source.adjusted_close, source.volume, source.dividend_amount, source.split_coefficient, source.load_date);
+    INSERT (SYMBOL_ID, SYMBOL, DATE, OPEN, HIGH, LOW, CLOSE, ADJUSTED_CLOSE, VOLUME, DIVIDEND_AMOUNT, SPLIT_COEFFICIENT, LOAD_DATE)
+    VALUES (source.symbol_id, source.symbol, source.date, source.open, source.high, source.low, source.close, source.adjusted_close, source.volume, source.dividend_amount, source.split_coefficient, source.load_date);
 
--- 10) Final validation and reporting
+-- 11) Final validation and reporting
 SELECT 
     symbol,
     COUNT(*) as total_rows,
