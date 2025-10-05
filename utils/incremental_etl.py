@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Set, Tuple
 import logging
 import json
+from enum import Enum
 
 import snowflake.connector
 from dataclasses import dataclass
@@ -24,6 +25,14 @@ from dataclasses import dataclass
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+class DataType(Enum):
+    """Enum for supported data types."""
+    LISTING_STATUS = "listing_status"
+    TIME_SERIES_DAILY_ADJUSTED = "time_series_daily_adjusted"
+    COMPANY_OVERVIEW = "company_overview"
+    EARNINGS = "earnings"
 
 
 @dataclass
