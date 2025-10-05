@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Fetch Alpha Vantage TIME_SERIES_DAILY_ADJUSTED data for a specific symbol and upload to S3.
-Simplified version focused on GitHub Actions workflow integration.
+Fetch Alpha Vantage TIME_SERIES_DAILY_ADJUSTED data and upload to S3.
+This script focuses solely on data extraction and S3 storage, following proper separation of concerns.
+Snowflake loading is handled separately via SQL runbooks.
 """
 
 import os
@@ -10,17 +11,18 @@ import time
 from datetime import datetime
 from io import StringIO
 import csv
+import logging
 
 import boto3
 import requests
 
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 
 def _parse_alpha_vantage_error(response):
     """Extract Alpha Vantage error messages from a response."""
-
-    # Alpha Vantage rate limits return JSON payloads with helpful keys. We try to
-    # surface those to aid debugging rather than failing with a generic CSV
-    # validation error later in the flow.
     try:
         payload = response.json()
     except ValueError:
@@ -51,11 +53,11 @@ def fetch_time_series_data(symbol, api_key, *, max_retries=5, backoff_seconds=15
         "function": "TIME_SERIES_DAILY_ADJUSTED",
         "symbol": symbol,
         "datatype": "csv",
-        "outputsize": "compact",  # Last 100 data points (about 4 months)
+        "outputsize": "full",  # Full-length time series (20+ years of historical data)
         "apikey": api_key
     }
     
-    print(f"Fetching TIME_SERIES_DAILY_ADJUSTED data for {symbol}...")
+    logger.info(f"Fetching TIME_SERIES_DAILY_ADJUSTED data for {symbol}...")
     
     for attempt in range(1, max_retries + 1):
         try:
@@ -65,32 +67,32 @@ def fetch_time_series_data(symbol, api_key, *, max_retries=5, backoff_seconds=15
             # Check if response looks like CSV (starts with expected header)
             response_text = response.text.strip()
             if response_text.startswith('timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient'):
-                print(f"Successfully fetched time series data for {symbol}")
+                logger.info(f"Successfully fetched time series data for {symbol}")
                 return response_text
 
             # Alpha Vantage sometimes responds with JSON (rate limiting, errors).
             error_message = _parse_alpha_vantage_error(response)
             if error_message:
-                print(f"Alpha Vantage returned an error for {symbol}: {error_message}")
+                logger.error(f"Alpha Vantage returned an error for {symbol}: {error_message}")
             else:
-                print(f"Unexpected response for {symbol}: {response.text[:200]}")
+                logger.warning(f"Unexpected response for {symbol}: {response.text[:200]}")
 
         except requests.exceptions.RequestException as e:
-            print(f"Request failed for {symbol}: {e}")
+            logger.error(f"Request failed for {symbol}: {e}")
 
         if attempt < max_retries:
             sleep_for = backoff_seconds * attempt
-            print(f"Retrying in {sleep_for} seconds (attempt {attempt}/{max_retries})...")
+            logger.info(f"Retrying in {sleep_for} seconds (attempt {attempt}/{max_retries})...")
             time.sleep(sleep_for)
         else:
-            print(f"Exceeded maximum retries ({max_retries}) for {symbol}")
+            logger.error(f"Exceeded maximum retries ({max_retries}) for {symbol}")
 
     return None
 
 
 def validate_csv_data(csv_data, symbol):
     """
-    Validate that the CSV data has the expected structure.
+    Validate that the CSV data has the expected structure and quality.
     
     Args:
         csv_data: CSV string to validate
@@ -113,26 +115,60 @@ def validate_csv_data(csv_data, symbol):
         
         if not expected_columns.issubset(actual_columns):
             missing = expected_columns - actual_columns
-            print(f"Missing columns for {symbol}: {missing}")
+            logger.error(f"Missing columns for {symbol}: {missing}")
             return False
             
         # Check that we have at least some data rows
-        row_count = sum(1 for _ in csv_reader)
+        rows = list(csv_reader)
+        row_count = len(rows)
+        
         if row_count == 0:
-            print(f"No data rows found for {symbol}")
+            logger.error(f"No data rows found for {symbol}")
+            return False
+        
+        # Basic data quality checks
+        valid_rows = 0
+        for i, row in enumerate(rows):
+            try:
+                # Validate timestamp format
+                datetime.strptime(row['timestamp'], '%Y-%m-%d')
+                
+                # Validate numeric fields
+                float(row['open'])
+                float(row['high'])
+                float(row['low'])
+                float(row['close'])
+                float(row['adjusted_close'])
+                int(row['volume'])
+                float(row['dividend_amount'])
+                float(row['split_coefficient'])
+                
+                valid_rows += 1
+                
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Invalid row {i+2} for {symbol}: {e}")
+                continue
+        
+        if valid_rows == 0:
+            logger.error(f"No valid data rows found for {symbol}")
             return False
             
-        print(f"Validated CSV for {symbol}: {row_count} rows with correct columns")
+        validity_ratio = valid_rows / row_count
+        if validity_ratio < 0.95:  # At least 95% of rows should be valid
+            logger.error(f"Data quality too low for {symbol}: {validity_ratio:.2%} valid rows")
+            return False
+            
+        logger.info(f"Validated CSV for {symbol}: {row_count} total rows, {valid_rows} valid rows ({validity_ratio:.2%})")
         return True
         
     except Exception as e:
-        print(f"CSV validation failed for {symbol}: {e}")
+        logger.error(f"CSV validation failed for {symbol}: {e}")
         return False
 
 
 def upload_to_s3(csv_data, symbol, load_date, bucket, s3_prefix, region):
     """
-    Upload CSV data to S3.
+    Upload CSV data to S3 with proper naming and metadata.
     
     Args:
         csv_data: CSV string to upload
@@ -143,31 +179,40 @@ def upload_to_s3(csv_data, symbol, load_date, bucket, s3_prefix, region):
         region: AWS region
         
     Returns:
-        True if successful, False otherwise
+        S3 key if successful, None otherwise
     """
     try:
-        # Generate S3 key (file path)
+        # Generate S3 key following established pattern
         s3_key = f"{s3_prefix}time_series_daily_adjusted_{symbol}_{load_date}.csv"
         
-        print(f"Uploading to S3: s3://{bucket}/{s3_key}")
+        logger.info(f"Uploading to S3: s3://{bucket}/{s3_key}")
         
         # Create S3 client (uses AWS credentials from environment/OIDC)
         s3_client = boto3.client('s3', region_name=region)
         
-        # Upload the CSV data
+        # Calculate metadata
+        row_count = len(csv_data.strip().split('\n')) - 1  # Subtract header
+        
+        # Upload the CSV data with metadata
         s3_client.put_object(
             Bucket=bucket,
             Key=s3_key,
             Body=csv_data.encode('utf-8'),
-            ContentType='text/csv'
+            ContentType='text/csv',
+            Metadata={
+                'symbol': symbol,
+                'load_date': load_date,
+                'row_count': str(row_count),
+                'upload_timestamp': datetime.utcnow().isoformat()
+            }
         )
         
-        print(f"Successfully uploaded {symbol} data to S3")
-        return True
+        logger.info(f"Successfully uploaded {symbol} data to S3: {row_count} rows")
+        return s3_key
         
     except Exception as e:
-        print(f"S3 upload failed for {symbol}: {e}")
-        return False
+        logger.error(f"S3 upload failed for {symbol}: {e}")
+        return None
 
 
 def main():
@@ -183,31 +228,34 @@ def main():
     
     # Validate required parameters
     if not all([symbol, api_key, bucket]):
-        print("Error: Missing required environment variables")
-        print("Required: SYMBOL, ALPHAVANTAGE_API_KEY, S3_BUCKET")
+        logger.error("Missing required environment variables")
+        logger.error("Required: SYMBOL, ALPHAVANTAGE_API_KEY, S3_BUCKET")
         sys.exit(1)
     
-    print(f"Starting time series extraction for symbol: {symbol}")
-    print(f"Load date: {load_date}")
+    logger.info(f"Starting time series extraction for symbol: {symbol}")
+    logger.info(f"Load date: {load_date}")
+    logger.info(f"Target: s3://{bucket}/{s3_prefix}")
     
-    # Fetch data from Alpha Vantage
+    # Step 1: Fetch data from Alpha Vantage
     csv_data = fetch_time_series_data(symbol, api_key)
     if not csv_data:
-        print(f"Failed to fetch data for {symbol}")
+        logger.error(f"Failed to fetch data for {symbol}")
         sys.exit(1)
     
-    # Validate CSV structure
+    # Step 2: Validate CSV structure and data quality
     if not validate_csv_data(csv_data, symbol):
-        print(f"Invalid CSV data for {symbol}")
+        logger.error(f"Invalid CSV data for {symbol}")
         sys.exit(1)
     
-    # Upload to S3
-    success = upload_to_s3(csv_data, symbol, load_date, bucket, s3_prefix, region)
-    if not success:
-        print(f"Failed to upload {symbol} data to S3")
+    # Step 3: Upload to S3
+    s3_key = upload_to_s3(csv_data, symbol, load_date, bucket, s3_prefix, region)
+    if not s3_key:
+        logger.error(f"Failed to upload {symbol} data to S3")
         sys.exit(1)
     
-    print(f"Successfully completed time series extraction for {symbol}")
+    logger.info(f"✅ Successfully completed time series extraction for {symbol}")
+    logger.info(f"📁 File location: s3://{bucket}/{s3_key}")
+    logger.info(f"🔄 Ready for Snowflake staging load")
 
 
 if __name__ == "__main__":

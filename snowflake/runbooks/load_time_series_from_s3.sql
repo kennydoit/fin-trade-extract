@@ -1,68 +1,69 @@
--- Load/merge Alpha Vantage TIME_SERIES_DAILY_ADJUSTED from S3 into-- Debug: Try t-- Copy data from S3 into staging table - using exact working pattern from listing_status
-COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (date, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient) FROM @TIME_SERIES_STAGE/$S3_PREFIX$FILE_NAME FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT ON_ERROR = 'CONTINUE';TIME_SERIES_STAGE
-)
-FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT
-FILES = ($S3_PREFIX || $FILE_NAME)
-ON_ERROR = 'CONTINUE';irectly using FILES
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 
-FROM @TIME_SERIES_STAGE
-(FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT) 
-FILES = ($S3_PREFIX || $FILE_NAME)
-LIMIT 5;IME_SERIES_DAILY_ADJUSTED
--- Set LOAD_DATE to the YYYYMMDD date of the file and SYMBOL to the stock symbol
-
+-- ============================================================================
+-- Load Time Series Data from S3 Stage - Simple Pattern with Calculated Symbol ID
+-- *** RECOMMENDED APPROACH - USE THIS FILE ***
+-- 
+-- Features:
+-- - Calculated SYMBOL_ID column (hash-based, consistent with symbol)
+-- - Full historical data (20+ years from Alpha Vantage)
+-- - Simple SYMBOL VARCHAR + DATE unique constraint
+-- - Proper duplicate handling and data quality checks
+-- ============================================================================
 USE DATABASE FIN_TRADE_EXTRACT;
 USE SCHEMA RAW;
 USE WAREHOUSE FIN_TRADE_WH;
 USE ROLE ETL_ROLE;
 
-SET LOAD_DATE = '20251003';
-SET SYMBOL = 'AAPL';
-SET S3_PREFIX = 'time_series_daily_adjusted/';
-SET FILE_NAME = 'time_series_daily_adjusted_' || $SYMBOL || '_' || $LOAD_DATE || '.csv';
+-- FOR TESTING ONLY: Clean up any existing objects
+DROP STAGE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE;
+DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
+DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED;
 
--- Debug: Check what files are in the stage
+-- 1) Create external stage pointing to S3 time series folder
+CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE
+  URL='s3://fin-trade-craft-landing/time_series_daily_adjusted/'
+  STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION
+  FILE_FORMAT = (
+    TYPE = 'CSV'
+    FIELD_DELIMITER = ','
+    RECORD_DELIMITER = '\n'
+    SKIP_HEADER = 1
+    NULL_IF = ('NULL', 'null', '')
+    EMPTY_FIELD_AS_NULL = TRUE
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+    TRIM_SPACE = TRUE
+    ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE
+  );
+
+-- 2) List files in stage to verify content
 LIST @TIME_SERIES_STAGE;
 
--- Debug: Show what file we're looking for
-SELECT 'Looking for file: ' || $FILE_NAME as debug_info;
+-- 3) Create main table matching current listing_status pattern (no SYMBOL_ID)
+-- Force drop and recreate to ensure proper schema
+DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED;
+CREATE TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (
+    SYMBOL_ID         NUMBER(38,0),
+    SYMBOL            VARCHAR(20) NOT NULL,
+    DATE              DATE NOT NULL,
+    OPEN              NUMBER(15,4),
+    HIGH              NUMBER(15,4),
+    LOW               NUMBER(15,4),
+    CLOSE             NUMBER(15,4),
+    ADJUSTED_CLOSE    NUMBER(15,4),
+    VOLUME            NUMBER(20,0),
+    DIVIDEND_AMOUNT   NUMBER(15,6),
+    SPLIT_COEFFICIENT NUMBER(10,6),
+    LOAD_DATE         DATE DEFAULT CURRENT_DATE(),
+    
+    -- Constraints
+    CONSTRAINT UK_TIME_SERIES_SYMBOL_DATE UNIQUE (SYMBOL, DATE)
+)
+COMMENT = 'Daily adjusted time series data from Alpha Vantage API'
+CLUSTER BY (DATE, SYMBOL);
 
--- 1) Create stage if needed
-CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE
-  URL='s3://fin-trade-craft-landing/'
-  STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION;
-
--- 2) Create table if needed (run the schema file first)
-CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (
-  symbol VARCHAR(20) NOT NULL,
-  date DATE NOT NULL,
-  open NUMBER(15,4),
-  high NUMBER(15,4),
-  low NUMBER(15,4),
-  close NUMBER(15,4),
-  adjusted_close NUMBER(15,4),
-  volume NUMBER(20,0),
-  dividend_amount NUMBER(15,6),
-  split_coefficient NUMBER(10,6),
-  load_date DATE,
-  PRIMARY KEY (symbol, date)
-);
-
--- 3) Create file format if needed
-CREATE FILE FORMAT IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT
-  TYPE = 'CSV'
-  FIELD_DELIMITER = ','
-  RECORD_DELIMITER = '\n'
-  SKIP_HEADER = 1
-  NULL_IF = ('NULL', 'null', '')
-  EMPTY_FIELD_AS_NULL = TRUE
-  FIELD_OPTIONALLY_ENCLOSED_BY = '"'
-  TRIM_SPACE = TRUE
-  ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE;
-
--- 4) Load into staging table
-CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (
+-- 4) Create staging table (transient for performance) 
+CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING (
   symbol VARCHAR(20),
+  symbol_id NUMBER(38,0),  -- Will be calculated from symbol
   date DATE,
   open NUMBER(15,4),
   high NUMBER(15,4),
@@ -72,87 +73,155 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUST
   volume NUMBER(20,0),
   dividend_amount NUMBER(15,6),
   split_coefficient NUMBER(10,6),
-  load_date DATE
+  source_filename VARCHAR(500)  -- Track which file each row came from
 );
 
--- Debug: Try to read the file directly
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 FROM @TIME_SERIES_STAGE/$S3_PREFIX$FILE_NAME (FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT) LIMIT 5;
-
--- Copy data from S3 into staging table
-COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (
-  date, open, high, low, close, adjusted_close, volume, dividend_amount, split_coefficient
+-- 5) Load data directly into staging table
+COPY INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING (
+    date, 
+    open, 
+    high, 
+    low, 
+    close, 
+    adjusted_close, 
+    volume, 
+    dividend_amount, 
+    split_coefficient,
+    source_filename
 )
 FROM (
-  SELECT 
-    TO_DATE($1, 'YYYY-MM-DD'),  -- timestamp -> date
-    $2::NUMBER(15,4),           -- open
-    $3::NUMBER(15,4),           -- high  
-    $4::NUMBER(15,4),           -- low
-    $5::NUMBER(15,4),           -- close
-    $6::NUMBER(15,4),           -- adjusted_close
-    $7::NUMBER(20,0),           -- volume
-    $8::NUMBER(15,6),           -- dividend_amount
-    $9::NUMBER(10,6)            -- split_coefficient
-  FROM @TIME_SERIES_STAGE
+    SELECT 
+        TO_DATE($1, 'YYYY-MM-DD'),
+        $2::NUMBER(15,4),
+        $3::NUMBER(15,4),
+        $4::NUMBER(15,4),
+        $5::NUMBER(15,4),
+        $6::NUMBER(15,4),
+        $7::NUMBER(20,0),
+        $8::NUMBER(15,6),
+        $9::NUMBER(10,6),
+        METADATA$FILENAME
+    FROM @TIME_SERIES_STAGE
 )
-FILE_FORMAT = FIN_TRADE_EXTRACT.RAW.TIME_SERIES_CSV_FORMAT
-PATTERN = '.*' || $LOAD_DATE || '.*\.csv'
-ON_ERROR = 'CONTINUE';
+PATTERN = '.*\.csv'
+ON_ERROR = CONTINUE;
 
--- Debug: Check copy results
-SELECT LAST_QUERY_ID() as last_query_id;
+-- Debug: Check staging data load
+SELECT COUNT(*) as staging_rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING;
 
--- Debug: Check how many rows were loaded
-SELECT COUNT(*) as rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
+-- 6) Extract symbol from filename
+UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+SET symbol = REGEXP_SUBSTR(source_filename, 'time_series_daily_adjusted_([A-Z0-9]+)_', 1, 1, 'e', 1)
+WHERE symbol IS NULL;
 
--- Add metadata to staging data
-UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING 
-SET 
-  symbol = $SYMBOL,
-  load_date = TO_DATE($LOAD_DATE, 'YYYYMMDD');
+-- Debug: Check symbol extraction
+SELECT 
+    symbol,
+    COUNT(*) as row_count,
+    MIN(date) as earliest_date,
+    MAX(date) as latest_date,
+    source_filename
+FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+GROUP BY symbol, source_filename
+ORDER BY symbol;
 
--- Debug: Check staging data before cleanup
-SELECT COUNT(*) as rows_before_cleanup FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
-SELECT * FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING LIMIT 5;
+-- 7) Calculate symbol_id using same logic as listing_status (hash-based approach)
+UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+SET symbol_id = ABS(HASH(symbol)) % 1000000000  -- Generate consistent ID from symbol
+WHERE symbol IS NOT NULL;
 
--- Remove bad rows (if any)
-DELETE FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING 
-WHERE symbol IS NULL OR date IS NULL OR close IS NULL;
+-- Debug: Check symbol_id calculation
+SELECT 
+    symbol,
+    symbol_id,
+    COUNT(*) as row_count
+FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+GROUP BY symbol, symbol_id
+ORDER BY symbol;
 
--- Debug: Check staging data after cleanup
-SELECT COUNT(*) as rows_after_cleanup FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING;
-SELECT * FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING LIMIT 10;
-
--- 5) Merge into final table (upsert by symbol + date)
-MERGE INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED tgt
-USING FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING src
-ON tgt.symbol = src.symbol AND tgt.date = src.date
-WHEN MATCHED THEN UPDATE SET
-  open = src.open,
-  high = src.high,
-  low = src.low,
-  close = src.close,
-  adjusted_close = src.adjusted_close,
-  volume = src.volume,
-  dividend_amount = src.dividend_amount,
-  split_coefficient = src.split_coefficient,
-  load_date = src.load_date
-WHEN NOT MATCHED THEN INSERT (
-  symbol, date, open, high, low, close, adjusted_close, 
-  volume, dividend_amount, split_coefficient, load_date
-) VALUES (
-  src.symbol, src.date, src.open, src.high, src.low, src.close, src.adjusted_close,
-  src.volume, src.dividend_amount, src.split_coefficient, src.load_date
+-- 8) Remove duplicates (keep most recent file's data for each symbol+date)
+DELETE FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+WHERE (symbol, date, source_filename) IN (
+    SELECT symbol, date, source_filename
+    FROM (
+        SELECT 
+            symbol, 
+            date, 
+            source_filename,
+            ROW_NUMBER() OVER (PARTITION BY symbol, date ORDER BY source_filename DESC) as rn
+        FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING
+    ) 
+    WHERE rn > 1
 );
 
--- 6) Verify results
-SELECT COUNT(*) AS total_records FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED 
-WHERE symbol = $SYMBOL;
+-- 9) Data quality validation - remove bad records  
+DELETE FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+WHERE symbol IS NULL 
+   OR symbol_id IS NULL
+   OR date IS NULL 
+   OR close IS NULL
+   OR close <= 0
+   OR volume < 0;
 
-SELECT COUNT(*) AS records_for_load_date FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED 
-WHERE symbol = $SYMBOL AND load_date = TO_DATE($LOAD_DATE, 'YYYYMMDD');
+-- Debug: Check data after cleanup and deduplication
+SELECT 
+    'After cleanup' as stage,
+    symbol,
+    symbol_id,
+    COUNT(*) as clean_row_count,
+    AVG(close) as avg_close_price,
+    AVG(volume) as avg_volume
+FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+GROUP BY symbol, symbol_id
+ORDER BY symbol;
 
-SELECT * FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED 
-WHERE symbol = $SYMBOL 
-ORDER BY date DESC 
-LIMIT 10;
+-- 10) Load from staging to final table with calculated symbol_id
+MERGE INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED AS target
+USING (
+    SELECT 
+        staging.symbol_id,
+        staging.symbol,
+        staging.date,
+        staging.open,
+        staging.high,
+        staging.low,
+        staging.close,
+        staging.adjusted_close,
+        staging.volume,
+        staging.dividend_amount,
+        staging.split_coefficient,
+        CURRENT_DATE() as load_date
+    FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING staging
+    WHERE staging.symbol IS NOT NULL
+      AND staging.symbol_id IS NOT NULL
+      AND staging.date IS NOT NULL
+) AS source
+ON target.SYMBOL = source.symbol 
+   AND target.DATE = source.date
+WHEN NOT MATCHED THEN
+    INSERT (SYMBOL_ID, SYMBOL, DATE, OPEN, HIGH, LOW, CLOSE, ADJUSTED_CLOSE, VOLUME, DIVIDEND_AMOUNT, SPLIT_COEFFICIENT, LOAD_DATE)
+    VALUES (source.symbol_id, source.symbol, source.date, source.open, source.high, source.low, source.close, source.adjusted_close, source.volume, source.dividend_amount, source.split_coefficient, source.load_date);
+
+-- 11) Final validation and reporting
+SELECT 
+    symbol,
+    COUNT(*) as total_rows,
+    MIN(date) as earliest_date,
+    MAX(date) as latest_date,
+    load_date
+FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED 
+GROUP BY symbol, load_date
+ORDER BY symbol;
+
+-- Show summary stats
+SELECT 
+    COUNT(DISTINCT symbol) as unique_symbols,
+    COUNT(*) as total_rows,
+    MIN(date) as earliest_date,
+    MAX(date) as latest_date
+FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED;
+
+-- Cleanup staging table
+DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING;
+
+SELECT 'Time series data loading completed successfully!' as status;

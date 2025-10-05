@@ -67,9 +67,9 @@ jobs:
         S3_BUCKET: fin-trade-craft-landing
         S3_TIME_SERIES_PREFIX: time_series_daily_adjusted/
       run: |
-        python scripts/github_actions/fetch_time_series_to_s3_improved.py
+        python scripts/github_actions/fetch_time_series_to_s3.py
 
-    - name: Load time series data into Snowflake (simple staging)
+    - name: Load time series data into Snowflake
       env:
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
@@ -78,5 +78,5 @@ jobs:
         SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
       run: |
-        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_time_series_simple_staging.sql
+        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_time_series_from_s3.sql
 
