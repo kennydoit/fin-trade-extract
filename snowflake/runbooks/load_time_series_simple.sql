@@ -5,16 +5,27 @@ USE SCHEMA RAW;
 USE WAREHOUSE FIN_TRADE_WH;
 USE ROLE ACCOUNTADMIN;
 
-SET LOAD_DATE = '20251004';
+SET LOAD_DATE = '20251005';
 
-CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE URL='s3://fin-trade-craft-landing/time_series_daily_adjusted/' STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION;
+-- File format for CSV
+CREATE OR REPLACE FILE FORMAT FF_CSV
+  TYPE = 'CSV'
+  SKIP_HEADER = 1
+  FIELD_OPTIONALLY_ENCLOSED_BY = '"';
+
+CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE 
+URL='s3://fin-trade-craft-landing/time_series_daily_adjusted/' 
+STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION
+FILE_FORMAT = (FORMAT_NAME = FF_CSV)
+
+-- Debug: Check what files are in the stage
+LIST @TIME_SERIES_STAGE;
 
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (symbol VARCHAR(20) NOT NULL, date DATE NOT NULL, open NUMBER(15,4), high NUMBER(15,4), low NUMBER(15,4), close NUMBER(15,4), adjusted_close NUMBER(15,4), volume NUMBER(20,0), dividend_amount NUMBER(15,6), split_coefficient NUMBER(10,6), load_date DATE, PRIMARY KEY (symbol, date));
 
 CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED_STAGING (symbol VARCHAR(20), date DATE, open NUMBER(15,4), high NUMBER(15,4), low NUMBER(15,4), close NUMBER(15,4), adjusted_close NUMBER(15,4), volume NUMBER(20,0), dividend_amount NUMBER(15,6), split_coefficient NUMBER(10,6), load_date DATE);
 
--- Debug: Check what files are in the stage
-LIST @TIME_SERIES_STAGE;
+
 
 -- Load ALL CSV files from the time series stage (supports multiple symbols)
 -- CSV columns: timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient
