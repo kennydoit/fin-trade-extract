@@ -69,7 +69,7 @@ jobs:
       run: |
         python scripts/github_actions/fetch_time_series_to_s3_improved.py
 
-    - name: Load time series data into Snowflake (proper staging)
+    - name: Load time series data into Snowflake (simple staging)
       env:
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
@@ -78,5 +78,5 @@ jobs:
         SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
       run: |
-        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_time_series_proper_staging.sql
+        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_time_series_simple_staging.sql
 
