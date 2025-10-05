@@ -69,8 +69,8 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUST
 -- Debug: Check stage configuration
 DESCRIBE STAGE TIME_SERIES_STAGE;
 
--- Debug: Try to list with pattern
-LIST @TIME_SERIES_STAGE PATTERN = '*.csv';
+-- Debug: Try to list with pattern (regex format)
+LIST @TIME_SERIES_STAGE PATTERN = '.*\.csv';
 
 -- Debug: Preview the first few rows from files to understand structure
 SELECT 
@@ -120,7 +120,7 @@ FROM (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, METADATA$FILENAME
     FROM @TIME_SERIES_STAGE
 )
-PATTERN = '*.csv'
+PATTERN = '.*\.csv'
 ON_ERROR = CONTINUE;
 
 -- Debug: Check raw data load
