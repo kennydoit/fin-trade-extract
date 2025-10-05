@@ -1,12 +1,14 @@
 -- Load Alpha Vantage TIME_SERIES_DAILY_ADJUSTED from S3 using proper staging pattern
 -- This follows the same proven approach as listing_status but adapted for time series data
 
-DROP STAGE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE;
 
 USE DATABASE FIN_TRADE_EXTRACT;
 USE SCHEMA RAW;
 USE WAREHOUSE FIN_TRADE_WH;
-USE ROLE ACCOUNTADMIN;
+USE ROLE ETL_ROLE;
+
+DROP STAGE IF EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE;
+
 
 -- Variables (will be replaced by workflow if needed)
 SET LOAD_DATE = '20251005';
@@ -26,6 +28,9 @@ CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE
     TRIM_SPACE = TRUE
     ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE
   );
+
+-- Debug: Check what files are available in the stage
+LIST @TIME_SERIES_STAGE;
 
 -- 2) Ensure main table exists with proper structure
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (
@@ -59,8 +64,7 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUST
   source_filename VARCHAR(500)  -- Track which file each row came from
 );
 
--- Debug: Check what files are available in the stage
-LIST @TIME_SERIES_STAGE;
+
 
 -- Debug: Check stage configuration
 DESCRIBE STAGE TIME_SERIES_STAGE;
