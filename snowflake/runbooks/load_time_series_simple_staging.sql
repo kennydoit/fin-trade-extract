@@ -1,5 +1,11 @@
 -- ============================================================================
 -- Load Time Series Data from S3 Stage - Simple Pattern (matching listing_status)
+-- *** RECOMMENDED APPROACH - USE THIS FILE ***
+-- 
+-- This file implements the same simple pattern as listing_status:
+-- - No symbol_id foreign keys  
+-- - Simple SYMBOL VARCHAR primary key
+-- - Proper duplicate handling and data quality checks
 -- ============================================================================
 USE DATABASE FIN_TRADE_EXTRACT;
 USE SCHEMA RAW;
@@ -109,7 +115,41 @@ FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING
 GROUP BY symbol, source_filename
 ORDER BY symbol;
 
--- 7) Load from staging to final table (simple pattern matching listing_status)
+-- 7) Remove duplicates (keep most recent file's data for each symbol+date)
+DELETE FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+WHERE (symbol, date, source_filename) IN (
+    SELECT symbol, date, source_filename
+    FROM (
+        SELECT 
+            symbol, 
+            date, 
+            source_filename,
+            ROW_NUMBER() OVER (PARTITION BY symbol, date ORDER BY source_filename DESC) as rn
+        FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING
+    ) 
+    WHERE rn > 1
+);
+
+-- 8) Data quality validation - remove bad records  
+DELETE FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+WHERE symbol IS NULL 
+   OR date IS NULL 
+   OR close IS NULL
+   OR close <= 0
+   OR volume < 0;
+
+-- Debug: Check data after cleanup and deduplication
+SELECT 
+    'After cleanup' as stage,
+    symbol,
+    COUNT(*) as clean_row_count,
+    AVG(close) as avg_close_price,
+    AVG(volume) as avg_volume
+FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
+GROUP BY symbol
+ORDER BY symbol;
+
+-- 9) Load from staging to final table (simple pattern matching listing_status)
 MERGE INTO FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED AS target
 USING (
     SELECT 
@@ -134,7 +174,7 @@ WHEN NOT MATCHED THEN
     INSERT (SYMBOL, DATE, OPEN, HIGH, LOW, CLOSE, ADJUSTED_CLOSE, VOLUME, DIVIDEND_AMOUNT, SPLIT_COEFFICIENT, LOAD_DATE)
     VALUES (source.symbol, source.date, source.open, source.high, source.low, source.close, source.adjusted_close, source.volume, source.dividend_amount, source.split_coefficient, source.load_date);
 
--- Debug: Final validation
+-- 10) Final validation and reporting
 SELECT 
     symbol,
     COUNT(*) as total_rows,

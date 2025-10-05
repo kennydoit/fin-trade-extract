@@ -1,5 +1,9 @@
 -- Load Alpha Vantage TIME_SERIES_DAILY_ADJUSTED from S3 using proper staging pattern
--- This follows the same proven approach as listing_status but adapted for time series data
+-- *** DEPRECATED - USE load_time_series_simple_staging.sql INSTEAD ***
+-- 
+-- This file has been updated to work without symbol_id but the simple_staging approach
+-- is cleaner and matches the current listing_status pattern better.
+-- Use load_time_series_simple_staging.sql for new deployments.
 
 
 USE DATABASE FIN_TRADE_EXTRACT;
