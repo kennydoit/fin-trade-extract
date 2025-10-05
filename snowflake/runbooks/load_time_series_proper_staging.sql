@@ -9,10 +9,21 @@ USE ROLE ACCOUNTADMIN;
 -- Variables (will be replaced by workflow if needed)
 SET LOAD_DATE = '20251005';
 
--- 1) Create external stage pointing to S3 time series folder
+-- 1) Create external stage pointing to S3 time series folder with file format
 CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE
   URL='s3://fin-trade-craft-landing/time_series_daily_adjusted/'
-  STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION;
+  STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION
+  FILE_FORMAT = (
+    TYPE = 'CSV'
+    FIELD_DELIMITER = ','
+    RECORD_DELIMITER = '\n'
+    SKIP_HEADER = 1
+    NULL_IF = ('NULL', 'null', '')
+    EMPTY_FIELD_AS_NULL = TRUE
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+    TRIM_SPACE = TRUE
+    ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE
+  );
 
 -- 2) Ensure main table exists with proper structure
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (
@@ -63,7 +74,6 @@ SELECT
     METADATA$FILENAME as source_file,
     METADATA$FILE_ROW_NUMBER as row_number
 FROM @TIME_SERIES_STAGE
-(FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
 LIMIT 10;
 
 -- 4) Load data from S3 into staging table using proper column mapping
@@ -94,7 +104,6 @@ FROM (
     FROM @TIME_SERIES_STAGE
     WHERE METADATA$FILENAME LIKE '%.csv'
 )
-FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
 ON_ERROR = CONTINUE;
 
 -- Debug: Check load results
