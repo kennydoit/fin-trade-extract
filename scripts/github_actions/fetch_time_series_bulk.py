@@ -19,6 +19,12 @@ import boto3
 import requests
 import snowflake.connector
 
+# Import incremental ETL utilities
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'utils'))
+from incremental_etl import IncrementalETLManager, DataType
+from symbol_screener import SymbolScreener, ScreeningCriteria
+from universe_management import UniverseManager
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -45,50 +51,86 @@ class AlphaVantageRateLimiter:
         self.last_call_time = time.time()
 
 
-def get_nasdaq_symbols_from_snowflake() -> List[str]:
+def get_snowflake_config() -> Dict[str, str]:
+    """Get Snowflake configuration from environment variables."""
+    return {
+        'account': os.environ['SNOWFLAKE_ACCOUNT'],
+        'user': os.environ['SNOWFLAKE_USER'],
+        'password': os.environ['SNOWFLAKE_PASSWORD'],
+        'database': os.environ['SNOWFLAKE_DATABASE'],
+        'schema': os.environ['SNOWFLAKE_SCHEMA'],
+        'warehouse': os.environ['SNOWFLAKE_WAREHOUSE']
+    }
+
+
+def get_symbols_to_process(processing_mode: str = 'incremental', 
+                          universe_name: str = 'nasdaq_composite',
+                          max_symbols: int = None) -> List[str]:
     """
-    Fetch NASDAQ symbols from LISTING_STATUS table in Snowflake.
+    Get symbols to process using incremental ETL management.
     
+    Args:
+        processing_mode: 'incremental', 'full_refresh', or 'universe'
+        universe_name: Universe to process (e.g., 'nasdaq_composite', 'nasdaq_high_quality')
+        max_symbols: Maximum number of symbols to return (for testing)
+        
     Returns:
-        List of NASDAQ symbols to process
+        List of symbols to process
     """
-    logger.info("Connecting to Snowflake to fetch NASDAQ symbols...")
+    logger.info(f"Getting symbols using {processing_mode} mode for universe '{universe_name}'...")
     
     try:
-        conn = snowflake.connector.connect(
-            account=os.environ['SNOWFLAKE_ACCOUNT'],
-            user=os.environ['SNOWFLAKE_USER'],
-            password=os.environ['SNOWFLAKE_PASSWORD'],
-            database=os.environ['SNOWFLAKE_DATABASE'],
-            schema=os.environ['SNOWFLAKE_SCHEMA'],
-            warehouse=os.environ['SNOWFLAKE_WAREHOUSE']
-        )
+        snowflake_config = get_snowflake_config()
+        etl_manager = IncrementalETLManager(snowflake_config)
         
-        cursor = conn.cursor()
+        if processing_mode == 'incremental':
+            # Get incremental processing plan
+            logger.info(f"🔄 Generating incremental processing plan for {universe_name}...")
+            plan = etl_manager.get_processing_plan(universe_name, DataType.TIME_SERIES_DAILY_ADJUSTED)
+            
+            if plan.processing_items:
+                symbols = [item['symbol'] for item in plan.processing_items]
+                logger.info(f"📋 Incremental plan: {len(symbols)} symbols need processing")
+                logger.info(f"📊 Processing reasons: {plan.summary}")
+            else:
+                logger.info("✅ All symbols are up to date - no processing needed")
+                return []
+                
+        elif processing_mode == 'full_refresh':
+            # Get all symbols from universe regardless of processing status
+            logger.info(f"🔄 Full refresh mode: getting all symbols from {universe_name}...")
+            symbols = etl_manager.get_universe_symbols(universe_name)
+            if not symbols:
+                logger.warning(f"No symbols found in universe '{universe_name}' - falling back to NASDAQ query")
+                symbols = etl_manager._get_nasdaq_symbols_fallback()
+                
+        elif processing_mode == 'universe':
+            # Process entire universe (skip dependency/recency checks)
+            logger.info(f"🌐 Universe mode: processing all symbols from {universe_name}...")
+            symbols = etl_manager.get_universe_symbols(universe_name)
+            if not symbols:
+                logger.warning(f"No symbols found in universe '{universe_name}' - creating default universe")
+                # Create default universe if it doesn't exist
+                universe_mgr = UniverseManager(snowflake_config)
+                universe_mgr.create_universe_table()
+                universe_mgr.create_predefined_universes()
+                symbols = etl_manager.get_universe_symbols('nasdaq_composite')
+                
+        else:
+            raise ValueError(f"Invalid processing_mode: {processing_mode}")
         
-        # Query for NASDAQ symbols (assuming exchange column contains 'NASDAQ')
-        query = """
-        SELECT DISTINCT symbol 
-        FROM LISTING_STATUS 
-        WHERE UPPER(exchange) LIKE '%NASDAQ%' 
-          AND symbol IS NOT NULL 
-          AND symbol != ''
-          AND status = 'Active'
-        ORDER BY symbol
-        """
+        # Apply symbol limit if specified (for testing)
+        if max_symbols and len(symbols) > max_symbols:
+            logger.info(f"🔒 Limiting to first {max_symbols} symbols for testing")
+            symbols = symbols[:max_symbols]
         
-        cursor.execute(query)
-        results = cursor.fetchall()
+        logger.info(f"✅ Selected {len(symbols)} symbols for processing")
+        etl_manager.close_connection()
         
-        symbols = [row[0] for row in results if row[0]]
-        
-        conn.close()
-        
-        logger.info(f"Found {len(symbols)} NASDAQ symbols in LISTING_STATUS")
         return symbols
         
     except Exception as e:
-        logger.error(f"Failed to fetch symbols from Snowflake: {e}")
+        logger.error(f"Failed to get symbols for processing: {e}")
         sys.exit(1)
 
 
@@ -309,10 +351,41 @@ def process_symbols_in_batches(symbols: List[str], api_key: str, batch_size: int
     return results
 
 
-def main():
-    """Main function for bulk time series processing."""
+# Add fallback method to IncrementalETLManager for when universe doesn't exist
+def _add_fallback_method():
+    """Add fallback method to IncrementalETLManager for NASDAQ symbols."""
     
-    logger.info("🚀 Starting bulk time series data extraction for NASDAQ symbols")
+    def _get_nasdaq_symbols_fallback(self) -> List[str]:
+        """Fallback method to get NASDAQ symbols directly from LISTING_STATUS."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        query = """
+        SELECT DISTINCT symbol 
+        FROM LISTING_STATUS 
+        WHERE UPPER(exchange) LIKE '%NASDAQ%' 
+          AND symbol IS NOT NULL 
+          AND symbol != ''
+          AND status = 'Active'
+        ORDER BY symbol
+        """
+        
+        cursor.execute(query)
+        results = cursor.fetchall()
+        
+        return [row[0] for row in results if row[0]]
+    
+    # Add method to IncrementalETLManager class
+    IncrementalETLManager._get_nasdaq_symbols_fallback = _get_nasdaq_symbols_fallback
+
+# Add the fallback method
+_add_fallback_method()
+
+
+def main():
+    """Main function for bulk time series processing with incremental ETL support."""
+    
+    logger.info("🚀 Starting bulk time series data extraction with incremental ETL")
     
     # Validate environment variables
     required_vars = [
@@ -326,19 +399,28 @@ def main():
         logger.error(f"❌ Missing required environment variables: {missing_vars}")
         sys.exit(1)
     
-    # Get configuration
+    # Get configuration with new incremental ETL options
     api_key = os.environ['ALPHAVANTAGE_API_KEY']
     batch_size = int(os.environ.get('BATCH_SIZE', '50'))
     max_batches = int(os.environ.get('MAX_BATCHES')) if os.environ.get('MAX_BATCHES') else None
     failure_threshold = float(os.environ.get('FAILURE_THRESHOLD', '0.5'))  # 50% default
     
+    # New incremental ETL configuration
+    processing_mode = os.environ.get('PROCESSING_MODE', 'incremental')  # 'incremental', 'full_refresh', 'universe'
+    universe_name = os.environ.get('UNIVERSE_NAME', 'nasdaq_composite')
+    max_symbols = int(os.environ.get('MAX_SYMBOLS')) if os.environ.get('MAX_SYMBOLS') else None
+    
     logger.info(f"📋 Configuration: Batch size = {batch_size}")
     if max_batches:
         logger.info(f"🛡️ Safety limit: Max {max_batches} batches")
     logger.info(f"⚠️ Failure threshold: {failure_threshold:.1%}")
+    logger.info(f"🔄 Processing mode: {processing_mode}")
+    logger.info(f"🌐 Universe: {universe_name}")
+    if max_symbols:
+        logger.info(f"🔒 Symbol limit: {max_symbols} symbols")
     
-    # Step 1: Get symbols from Snowflake
-    symbols = get_nasdaq_symbols_from_snowflake()
+    # Step 1: Get symbols using incremental ETL management
+    symbols = get_symbols_to_process(processing_mode, universe_name, max_symbols)
     
     if not symbols:
         logger.error("❌ No symbols found to process")

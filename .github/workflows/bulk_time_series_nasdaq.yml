@@ -1,8 +1,22 @@
-name: Bulk Time Series ETL - NASDAQ
+name: Bulk Time Series ETL - NASDAQ (Incremental)
 
 on:
   workflow_dispatch:
     inputs:
+      processing_mode:
+        description: 'Processing mode: incremental (smart), full_refresh (all), universe (skip checks)'
+        required: false
+        type: choice
+        options:
+          - incremental
+          - full_refresh
+          - universe
+        default: 'incremental'
+      universe_name:
+        description: 'Universe to process (nasdaq_composite, nasdaq_high_quality, etc.)'
+        required: false
+        type: string
+        default: 'nasdaq_composite'
       batch_size:
         description: 'Number of symbols to process per batch'
         required: false
@@ -12,16 +26,15 @@ on:
         description: 'Maximum number of batches to process (safety limit, blank = no limit)'
         required: false
         type: number
+      max_symbols:
+        description: 'Maximum number of symbols to process (testing limit, blank = no limit)'
+        required: false
+        type: number
       failure_threshold:
         description: 'Stop if success rate falls below this percentage (0.5 = 50%)'
         required: false
         type: number
         default: 0.5
-      exchange_filter:
-        description: 'Exchange filter (e.g., NASDAQ, NYSE, or ALL)'
-        required: false
-        type: string
-        default: 'NASDAQ'
   schedule:
     # Run weekly on Sundays at 2 AM EST for full NASDAQ refresh
     - cron: '0 7 * * 0'  # Sunday at 7 AM UTC
@@ -56,7 +69,7 @@ jobs:
         role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
         aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Bulk fetch time series data for NASDAQ symbols
+    - name: Bulk fetch time series data with incremental ETL
       env:
         ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
         AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -68,21 +81,27 @@ jobs:
         SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
         SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+        PROCESSING_MODE: ${{ inputs.processing_mode || 'incremental' }}
+        UNIVERSE_NAME: ${{ inputs.universe_name || 'nasdaq_composite' }}
         BATCH_SIZE: ${{ inputs.batch_size || '50' }}
         MAX_BATCHES: ${{ inputs.max_batches }}
+        MAX_SYMBOLS: ${{ inputs.max_symbols }}
         FAILURE_THRESHOLD: ${{ inputs.failure_threshold || '0.5' }}
-        EXCHANGE_FILTER: ${{ inputs.exchange_filter || 'NASDAQ' }}
         LOAD_DATE: ${{ github.run_number }}${{ github.run_attempt }}
       run: |
-        echo "🚀 Starting bulk NASDAQ time series extraction..."
+        echo "🚀 Starting incremental time series ETL extraction..."
+        echo "🔄 Processing mode: $PROCESSING_MODE"
+        echo "🌐 Universe: $UNIVERSE_NAME"
         echo "📋 Batch size: $BATCH_SIZE symbols per batch"
         if [ -n "$MAX_BATCHES" ]; then
           echo "🛡️ Safety limit: Maximum $MAX_BATCHES batches"
         else
           echo "🚀 Processing mode: All available batches"
         fi
+        if [ -n "$MAX_SYMBOLS" ]; then
+          echo "🔒 Symbol limit: $MAX_SYMBOLS symbols (testing)"
+        fi
         echo "⚠️ Failure threshold: $FAILURE_THRESHOLD"
-        echo "🏢 Exchange filter: $EXCHANGE_FILTER"
         echo "📅 Load date: $LOAD_DATE"
         
         python scripts/github_actions/fetch_time_series_bulk.py
@@ -110,8 +129,11 @@ jobs:
     - name: Summary Report
       if: always()
       run: |
-        echo "📊 BULK PROCESSING SUMMARY"
-        echo "========================="
+        echo "📊 INCREMENTAL ETL PROCESSING SUMMARY"
+        echo "===================================="
+        echo "🔄 Processing Mode: $PROCESSING_MODE"
+        echo "🌐 Universe: $UNIVERSE_NAME"
+        echo ""
         if [ -f /tmp/bulk_processing_results.json ]; then
           python -c "
         import json
@@ -122,6 +144,11 @@ jobs:
         print(f'❌ Failed: {results[\"failed\"]}')
         print(f'⏱️  Total processing time: {results[\"total_time_minutes\"]:.1f} minutes')
         print(f'🏢 Ready for Snowflake: {results[\"successful\"]} symbol datasets')
+        
+        # Calculate efficiency metrics
+        if results['total_symbols'] > 0:
+            efficiency = results['successful'] / results['total_time_minutes'] if results['total_time_minutes'] > 0 else 0
+            print(f'⚡ Processing efficiency: {efficiency:.1f} symbols/minute')
         "
         else
           echo "❌ No results file found - check logs for errors"
