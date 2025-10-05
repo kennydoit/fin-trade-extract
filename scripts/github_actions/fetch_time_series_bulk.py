@@ -86,35 +86,42 @@ def get_symbols_to_process(processing_mode: str = 'incremental',
         if processing_mode == 'incremental':
             # Get incremental processing plan
             logger.info(f"🔄 Generating incremental processing plan for {universe_name}...")
-            plan = etl_manager.get_processing_plan(universe_name, DataType.TIME_SERIES_DAILY_ADJUSTED)
             
-            if plan.processing_items:
-                symbols = [item['symbol'] for item in plan.processing_items]
+            # First get all symbols in the universe
+            universe_symbols = etl_manager.get_universe_symbols(exchange_filter='NASDAQ')
+            logger.info(f"📊 Found {len(universe_symbols)} symbols in universe")
+            
+            # Then identify which ones need processing for time series data
+            symbols = etl_manager.identify_symbols_to_process(
+                data_type=DataType.TIME_SERIES_DAILY_ADJUSTED.value,
+                universe_symbols=universe_symbols
+            )
+            
+            if symbols:
                 logger.info(f"📋 Incremental plan: {len(symbols)} symbols need processing")
-                logger.info(f"📊 Processing reasons: {plan.summary}")
             else:
                 logger.info("✅ All symbols are up to date - no processing needed")
                 return []
                 
         elif processing_mode == 'full_refresh':
             # Get all symbols from universe regardless of processing status
-            logger.info(f"🔄 Full refresh mode: getting all symbols from {universe_name}...")
-            symbols = etl_manager.get_universe_symbols(universe_name)
+            logger.info(f"🔄 Full refresh mode: getting all symbols from universe...")
+            symbols = etl_manager.get_universe_symbols(exchange_filter='NASDAQ')
             if not symbols:
-                logger.warning(f"No symbols found in universe '{universe_name}' - falling back to NASDAQ query")
+                logger.warning(f"No symbols found - falling back to NASDAQ query")
                 symbols = etl_manager._get_nasdaq_symbols_fallback()
                 
         elif processing_mode == 'universe':
             # Process entire universe (skip dependency/recency checks)
-            logger.info(f"🌐 Universe mode: processing all symbols from {universe_name}...")
-            symbols = etl_manager.get_universe_symbols(universe_name)
+            logger.info(f"🌐 Universe mode: processing all symbols from universe...")
+            symbols = etl_manager.get_universe_symbols(exchange_filter='NASDAQ')
             if not symbols:
-                logger.warning(f"No symbols found in universe '{universe_name}' - creating default universe")
+                logger.warning(f"No symbols found - creating default universe")
                 # Create default universe if it doesn't exist
                 universe_mgr = UniverseManager(snowflake_config)
                 universe_mgr.create_universe_table()
                 universe_mgr.create_predefined_universes()
-                symbols = etl_manager.get_universe_symbols('nasdaq_composite')
+                symbols = etl_manager.get_universe_symbols(exchange_filter='NASDAQ')
                 
         else:
             raise ValueError(f"Invalid processing_mode: {processing_mode}")
