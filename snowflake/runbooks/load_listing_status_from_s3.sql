@@ -101,16 +101,15 @@ SELECT
 FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING 
 GROUP BY source_file;
 
--- Show sample records from each file type
+-- Show sample records from active stocks
 SELECT 
     'ACTIVE STOCKS SAMPLE' as record_type,
     symbol, name, exchange, status, ipoDate, delistingDate
 FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING 
 WHERE source_file LIKE '%active%'
-LIMIT 5
+LIMIT 5;
 
-UNION ALL
-
+-- Show sample records from delisted stocks
 SELECT 
     'DELISTED STOCKS SAMPLE' as record_type,
     symbol, name, exchange, status, ipoDate, delistingDate
@@ -147,29 +146,27 @@ FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS
 GROUP BY status
 ORDER BY symbol_count DESC;
 
--- Check for delisted symbols specifically
+-- Check for delisted symbols count
 SELECT 
     'DELISTED SYMBOLS' as category,
     COUNT(*) as count
 FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
-WHERE delistingDate IS NOT NULL AND delistingDate != ''
+WHERE delistingDate IS NOT NULL AND delistingDate != '';
 
-UNION ALL
-
+-- Check for active symbols count
 SELECT 
     'ACTIVE SYMBOLS' as category,
     COUNT(*) as count
 FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
 WHERE (delistingDate IS NULL OR delistingDate = '') AND status = 'Active';
 
--- Sample records from each category
+-- Sample active records
 SELECT 'ACTIVE SAMPLES' as type, symbol, name, exchange, status, ipoDate, delistingDate, load_date
 FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
 WHERE status = 'Active' AND (delistingDate IS NULL OR delistingDate = '')
-ORDER BY symbol LIMIT 10
+ORDER BY symbol LIMIT 10;
 
-UNION ALL
-
+-- Sample delisted records
 SELECT 'DELISTED SAMPLES' as type, symbol, name, exchange, status, ipoDate, delistingDate, load_date
 FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
 WHERE delistingDate IS NOT NULL AND delistingDate != ''
