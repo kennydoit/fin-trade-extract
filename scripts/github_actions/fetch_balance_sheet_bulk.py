@@ -151,11 +151,10 @@ class BalanceSheetExtractor:
             # Typically: Active stocks/ETFs with reasonable market presence
             criteria = ScreeningCriteria(
                 exchanges=[ExchangeType.NASDAQ, ExchangeType.NYSE, ExchangeType.AMEX],
-                asset_types=[AssetType.STOCK],  # Focus on stocks for fundamentals
+                asset_types=[AssetType.EQUITY],  # Focus on equities for fundamentals
                 min_price=5.0,  # Filter out penny stocks
                 min_market_cap=100_000_000,  # $100M+ market cap
-                min_avg_volume=100_000,  # Reasonable trading volume
-                active_only=True
+                min_avg_volume=100_000  # Reasonable trading volume
             )
             
             results = screener.screen_symbols(criteria)

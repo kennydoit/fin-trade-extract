@@ -33,6 +33,7 @@ class DataType(Enum):
     TIME_SERIES_DAILY_ADJUSTED = "time_series_daily_adjusted"
     COMPANY_OVERVIEW = "company_overview"
     EARNINGS = "earnings"
+    BALANCE_SHEET = "balance_sheet"
 
 
 @dataclass
@@ -73,6 +74,13 @@ DATA_TYPES = {
         table_name='EARNINGS',
         refresh_frequency_days=90,  # Quarterly refresh  
         priority=4,  # Lower priority - periodic data
+        dependency_types=['listing_status']
+    ),
+    'balance_sheet': DataTypeConfig(
+        name='balance_sheet',
+        table_name='BALANCE_SHEET',
+        refresh_frequency_days=30,  # Monthly refresh for fundamentals
+        priority=3,  # Medium priority - fundamental data
         dependency_types=['listing_status']
     )
 }
@@ -177,6 +185,13 @@ class IncrementalETLManager:
             WHERE symbol IS NOT NULL
             GROUP BY symbol
             """
+        elif data_type == 'balance_sheet':
+            query = """
+            SELECT symbol, MAX(created_at) as last_update
+            FROM FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET
+            WHERE symbol IS NOT NULL
+            GROUP BY symbol
+            """
         else:
             # Generic pattern for other data types
             query = f"""
@@ -266,6 +281,77 @@ class IncrementalETLManager:
         logger.info(f"  - Total to process: {len(symbols_to_process)}")
         
         return symbols_to_process
+
+    def get_symbols_needing_update(self, symbols: List[str], data_type: str, 
+                                 staleness_hours: int, max_symbols: Optional[int] = None) -> List[str]:
+        """
+        Get symbols that need updates based on staleness criteria.
+        
+        Args:
+            symbols: List of symbols to check
+            data_type: Type of data (e.g., 'BALANCE_SHEET')
+            staleness_hours: Hours after which data is considered stale
+            max_symbols: Optional limit on number of symbols to return
+            
+        Returns:
+            List of symbols needing updates
+        """
+        # Convert to the data type format expected by our existing methods
+        data_type_key = data_type.lower().replace('_', '_') if data_type.isupper() else data_type.lower()
+        
+        if data_type_key not in DATA_TYPES:
+            logger.warning(f"Unknown data type: {data_type_key}, using staleness-based filtering")
+            # Fallback: return first max_symbols if data type not recognized
+            return symbols[:max_symbols] if max_symbols else symbols
+        
+        # Use existing identify_symbols_to_process method
+        symbols_to_process = self.identify_symbols_to_process(
+            data_type=data_type_key,
+            universe_symbols=symbols,
+            force_refresh=False,
+            max_symbols=max_symbols
+        )
+        
+        return symbols_to_process
+
+    def update_processing_status(self, symbol: str, data_type: str, success: bool, 
+                               error_message: Optional[str] = None, processing_mode: str = 'incremental'):
+        """
+        Update processing status for a symbol and data type.
+        
+        Args:
+            symbol: Symbol that was processed
+            data_type: Type of data processed
+            success: Whether processing was successful
+            error_message: Optional error message if processing failed
+            processing_mode: Processing mode used
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Create or update processing status in INCREMENTAL_ETL_STATUS table
+            # This is a simple implementation - you may want to create this table if it doesn't exist
+            query = """
+            INSERT INTO FIN_TRADE_EXTRACT.RAW.INCREMENTAL_ETL_STATUS 
+            (symbol, data_type, last_processed_at, success, error_message, processing_mode, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            cursor.execute(query, (
+                symbol,
+                data_type,
+                datetime.now(),
+                success,
+                error_message,
+                processing_mode,
+                datetime.now()
+            ))
+            
+            conn.commit()
+            
+        except Exception as e:
+            logger.warning(f"Could not update processing status for {symbol}: {e}")
 
     def check_dependencies(self, data_type: str, symbols: List[str]) -> Tuple[List[str], List[str]]:
         """
