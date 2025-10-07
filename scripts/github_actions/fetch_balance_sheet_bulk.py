@@ -32,6 +32,7 @@ import snowflake.connector
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from utils.incremental_etl import IncrementalETLManager
 from utils.symbol_screener import SymbolScreener, ScreeningCriteria, AssetType, ExchangeType
+from utils.universe_management import UniverseManager
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -103,7 +104,14 @@ class BalanceSheetExtractor:
             if self.processing_mode == 'universe':
                 # Process specific universe
                 logger.info(f"📋 Processing universe: {self.universe_name}")
-                symbols = etl_manager.get_universe_symbols(self.universe_name)
+                try:
+                    universe_manager = UniverseManager(self.snowflake_config)
+                    universe_def = universe_manager.load_universe(self.universe_name)
+                    symbols = universe_def.symbols
+                    universe_manager.close_connection()
+                except Exception as e:
+                    logger.warning(f"⚠️ Universe {self.universe_name} not found, falling back to fundamentals screening: {e}")
+                    symbols = self._get_fundamentals_eligible_symbols()
                 
             elif self.processing_mode == 'full_refresh':
                 # Force refresh all eligible symbols
