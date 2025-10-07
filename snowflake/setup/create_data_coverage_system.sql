@@ -13,10 +13,13 @@ USE SCHEMA RAW;
 USE WAREHOUSE FIN_TRADE_WH;
 USE ROLE ETL_ROLE;
 
--- 1) Simplified ETL Watermark Table
+-- 1) Enhanced ETL Watermark Table with Listing Dates
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
     TABLE_NAME                  VARCHAR(100) NOT NULL,     -- Target table name (e.g., 'BALANCE_SHEET', 'TIME_SERIES_DAILY_ADJUSTED')
     SYMBOL_ID                   NUMBER(38,0) NOT NULL,     -- Hash-based symbol identifier
+    SYMBOL                      VARCHAR(20) NOT NULL,      -- Actual symbol for reference
+    IPO_DATE                    DATE,                      -- IPO date from listing status
+    DELISTING_DATE              DATE,                      -- Delisting date from listing status  
     LAST_FISCAL_DATE            DATE,                      -- Last fiscal/data date available
     LAST_SUCCESSFUL_RUN         TIMESTAMP_NTZ,             -- Last successful processing timestamp
     CONSECUTIVE_FAILURES        NUMBER(5,0) DEFAULT 0,     -- Count of consecutive failures
@@ -26,10 +29,29 @@ CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
     -- Constraints
     CONSTRAINT PK_ETL_WATERMARKS PRIMARY KEY (TABLE_NAME, SYMBOL_ID)
 )
-COMMENT = 'Simplified ETL watermarking table for tracking processing status'
+COMMENT = 'Enhanced ETL watermarking table with listing dates for comprehensive tracking'
 CLUSTER BY (TABLE_NAME, LAST_SUCCESSFUL_RUN);
 
--- 2) Simplified Data Coverage View
+-- 1a) Initialize Watermarks from Listing Status
+INSERT INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS 
+    (TABLE_NAME, SYMBOL_ID, SYMBOL, IPO_DATE, DELISTING_DATE, CREATED_AT, UPDATED_AT)
+SELECT DISTINCT
+    'LISTING_STATUS' as TABLE_NAME,
+    ABS(HASH(ls.symbol)) % 1000000000 as SYMBOL_ID,
+    ls.symbol as SYMBOL,
+    TRY_TO_DATE(ls.ipoDate, 'YYYY-MM-DD') as IPO_DATE,
+    TRY_TO_DATE(ls.delistingDate, 'YYYY-MM-DD') as DELISTING_DATE,
+    CURRENT_TIMESTAMP() as CREATED_AT,
+    CURRENT_TIMESTAMP() as UPDATED_AT
+FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS ls
+WHERE ls.symbol IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS w 
+      WHERE w.TABLE_NAME = 'LISTING_STATUS' 
+        AND w.SYMBOL_ID = ABS(HASH(ls.symbol)) % 1000000000
+  );
+
+-- 2) Enhanced Data Coverage View with Listing Dates
 CREATE OR REPLACE VIEW FIN_TRADE_EXTRACT.ANALYTICS.DATA_COVERAGE_DASHBOARD AS
 WITH symbol_universe AS (
     SELECT 
@@ -38,7 +60,9 @@ WITH symbol_universe AS (
         exchange,
         assetType,
         status,
-        name
+        name,
+        TRY_TO_DATE(ipoDate, 'YYYY-MM-DD') as ipo_date,
+        TRY_TO_DATE(delistingDate, 'YYYY-MM-DD') as delisting_date
     FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS
     WHERE symbol IS NOT NULL
 ),
@@ -71,6 +95,9 @@ watermark_status AS (
     SELECT 
         w.table_name,
         w.symbol_id,
+        w.symbol,
+        w.ipo_date,
+        w.delisting_date,
         w.last_fiscal_date,
         w.last_successful_run,
         w.consecutive_failures,
@@ -87,6 +114,16 @@ SELECT
     u.assetType,
     u.status as listing_status,
     u.name as company_name,
+    
+    -- Listing Dates
+    COALESCE(wm_ls.ipo_date, u.ipo_date) as ipo_date,
+    COALESCE(wm_ls.delisting_date, u.delisting_date) as delisting_date,
+    DATEDIFF('day', COALESCE(wm_ls.ipo_date, u.ipo_date), CURRENT_DATE()) as days_since_ipo,
+    CASE 
+        WHEN COALESCE(wm_ls.delisting_date, u.delisting_date) IS NOT NULL THEN 'DELISTED'
+        WHEN u.status = 'Active' THEN 'ACTIVE'
+        ELSE u.status
+    END as current_status,
     
     -- Time Series Coverage
     ts.first_date as ts_first_date,
@@ -132,6 +169,7 @@ SELECT
 FROM symbol_universe u
 LEFT JOIN time_series_coverage ts ON u.symbol_id = ts.symbol_id
 LEFT JOIN balance_sheet_coverage bs ON u.symbol_id = bs.symbol_id  
+LEFT JOIN watermark_status wm_ls ON u.symbol_id = wm_ls.symbol_id AND wm_ls.table_name = 'LISTING_STATUS'
 LEFT JOIN watermark_status wm_ts ON u.symbol_id = wm_ts.symbol_id AND wm_ts.table_name = 'TIME_SERIES_DAILY_ADJUSTED'
 LEFT JOIN watermark_status wm_bs ON u.symbol_id = wm_bs.symbol_id AND wm_bs.table_name = 'BALANCE_SHEET'
 ORDER BY u.symbol;

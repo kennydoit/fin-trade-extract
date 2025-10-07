@@ -101,6 +101,10 @@ class BalanceSheetExtractor:
             # Initialize incremental ETL manager
             etl_manager = IncrementalETLManager(self.snowflake_config)
             
+            # Initialize watermarks from listing status on first run
+            logger.info("🔄 Ensuring watermark table is initialized with listing data...")
+            etl_manager.initialize_watermarks_from_listing_status()
+            
             if self.processing_mode == 'universe':
                 # Process specific universe
                 logger.info(f"📋 Processing universe: {self.universe_name}")

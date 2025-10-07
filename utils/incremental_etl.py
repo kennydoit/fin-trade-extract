@@ -331,6 +331,46 @@ class IncrementalETLManager:
         
         return symbols_to_process
 
+    def initialize_watermarks_from_listing_status(self):
+        """
+        Initialize watermark table with all symbols from listing status table.
+        This ensures we have a complete universe of symbols with their IPO/delisting dates.
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            initialize_query = """
+            INSERT INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS 
+                (TABLE_NAME, SYMBOL_ID, SYMBOL, IPO_DATE, DELISTING_DATE, CREATED_AT, UPDATED_AT)
+            SELECT DISTINCT
+                'LISTING_STATUS' as TABLE_NAME,
+                ABS(HASH(ls.symbol)) % 1000000000 as SYMBOL_ID,
+                ls.symbol as SYMBOL,
+                TRY_TO_DATE(ls.ipoDate, 'YYYY-MM-DD') as IPO_DATE,
+                TRY_TO_DATE(ls.delistingDate, 'YYYY-MM-DD') as DELISTING_DATE,
+                CURRENT_TIMESTAMP() as CREATED_AT,
+                CURRENT_TIMESTAMP() as UPDATED_AT
+            FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS ls
+            WHERE ls.symbol IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS w 
+                  WHERE w.TABLE_NAME = 'LISTING_STATUS' 
+                    AND w.SYMBOL_ID = ABS(HASH(ls.symbol)) % 1000000000
+              )
+            """
+            
+            cursor.execute(initialize_query)
+            rows_inserted = cursor.rowcount
+            conn.commit()
+            
+            logger.info(f"Initialized watermarks for {rows_inserted} symbols from listing status")
+            return rows_inserted
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize watermarks from listing status: {e}")
+            return 0
+
     def update_processing_status(self, symbol: str, data_type: str, success: bool, 
                                error_message: Optional[str] = None, processing_mode: str = 'incremental'):
         """
@@ -364,25 +404,41 @@ class IncrementalETLManager:
                 datetime.now()
             ))
             
-            # 2) Update or insert into ETL_WATERMARKS for simplified tracking
+            # 2) Update or insert into ETL_WATERMARKS for enhanced tracking
             # Calculate symbol_id (consistent with other tables)
             symbol_id = abs(hash(symbol)) % 1000000000
             
             # Map data_type to table_name
             table_name = data_type.upper().replace('_', '_')  # Keep as-is for now
             
+            # Get listing dates for new watermark entries
+            listing_query = """
+            SELECT TRY_TO_DATE(ipoDate, 'YYYY-MM-DD') as ipo_date,
+                   TRY_TO_DATE(delistingDate, 'YYYY-MM-DD') as delisting_date
+            FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
+            WHERE symbol = %s 
+            LIMIT 1
+            """
+            
+            cursor.execute(listing_query, (symbol,))
+            listing_result = cursor.fetchone()
+            ipo_date = listing_result[0] if listing_result else None
+            delisting_date = listing_result[1] if listing_result else None
+            
             watermark_query = """
             MERGE INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS AS target
-            USING (SELECT %s as table_name, %s as symbol_id) AS source
+            USING (SELECT %s as table_name, %s as symbol_id, %s as symbol) AS source
             ON target.TABLE_NAME = source.table_name AND target.SYMBOL_ID = source.symbol_id
             WHEN MATCHED THEN UPDATE SET
                 LAST_SUCCESSFUL_RUN = CASE WHEN %s THEN %s ELSE target.LAST_SUCCESSFUL_RUN END,
                 CONSECUTIVE_FAILURES = CASE WHEN %s THEN 0 ELSE target.CONSECUTIVE_FAILURES + 1 END,
                 UPDATED_AT = %s
             WHEN NOT MATCHED THEN INSERT (
-                TABLE_NAME, SYMBOL_ID, LAST_SUCCESSFUL_RUN, CONSECUTIVE_FAILURES, CREATED_AT, UPDATED_AT
+                TABLE_NAME, SYMBOL_ID, SYMBOL, IPO_DATE, DELISTING_DATE, 
+                LAST_SUCCESSFUL_RUN, CONSECUTIVE_FAILURES, CREATED_AT, UPDATED_AT
             ) VALUES (
-                %s, %s, CASE WHEN %s THEN %s ELSE NULL END,
+                %s, %s, %s, %s, %s,
+                CASE WHEN %s THEN %s ELSE NULL END,
                 CASE WHEN %s THEN 0 ELSE 1 END, %s, %s
             )
             """
@@ -390,11 +446,12 @@ class IncrementalETLManager:
             now = datetime.now()
             cursor.execute(watermark_query, (
                 # USING clause
-                table_name, symbol_id,
+                table_name, symbol_id, symbol,
                 # WHEN MATCHED SET values
                 success, now, success, now,
                 # WHEN NOT MATCHED INSERT values  
-                table_name, symbol_id, success, now, success, now, now
+                table_name, symbol_id, symbol, ipo_date, delisting_date,
+                success, now, success, now, now
             ))
             
             conn.commit()
