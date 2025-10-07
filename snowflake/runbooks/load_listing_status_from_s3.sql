@@ -93,6 +93,18 @@ LIMIT 10;
 -- Remove bad rows
 DELETE FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING WHERE symbol IS NULL OR symbol = '#NAME?';
 
+-- Debug: Check for duplicate symbols across files
+SELECT 
+    symbol,
+    COUNT(*) as occurrence_count,
+    COUNT(DISTINCT source_file) as file_count,
+    LISTAGG(DISTINCT source_file, ', ') as files
+FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING 
+GROUP BY symbol
+HAVING COUNT(*) > 1
+ORDER BY occurrence_count DESC
+LIMIT 10;
+
 -- Debug: Check staging data after cleanup
 SELECT COUNT(*) as rows_after_cleanup FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING;
 SELECT 
@@ -117,10 +129,23 @@ FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING
 WHERE source_file LIKE '%delisted%'
 LIMIT 5;
 
--- 4) Merge into final table (upsert by symbol)
+-- 4) Merge into final table (upsert by symbol with deduplication)
+-- First, create a deduplicated view of staging data prioritizing active over delisted
 MERGE INTO FIN_TRADE_EXTRACT.RAW.LISTING_STATUS tgt
-USING FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING src
+USING (
+  SELECT 
+    symbol, name, exchange, assetType, ipoDate, delistingDate, status, load_date,
+    ROW_NUMBER() OVER (
+      PARTITION BY UPPER(TRIM(symbol)) 
+      ORDER BY 
+        CASE WHEN source_file LIKE '%active%' THEN 1 ELSE 2 END,  -- Prioritize active files
+        source_file DESC  -- Then by filename for consistency
+    ) as rn
+  FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING
+  WHERE symbol IS NOT NULL AND TRIM(symbol) != ''
+) src
 ON UPPER(TRIM(tgt.symbol)) = UPPER(TRIM(src.symbol))
+WHERE src.rn = 1  -- Only take the first (preferred) record per symbol
 WHEN MATCHED THEN UPDATE SET
   name = src.name,
   exchange = src.exchange,
