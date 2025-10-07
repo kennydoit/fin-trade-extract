@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
     DELISTING_DATE              DATE,                      -- Delisting date from listing status
     
     -- Processing Tracking
+    FIRST_FISCAL_DATE           DATE,                      -- First fiscal/data date available (earliest time series data point)
     LAST_FISCAL_DATE            DATE,                      -- Last fiscal/data date available in the data
     LAST_SUCCESSFUL_RUN         TIMESTAMP_NTZ,             -- Last successful processing timestamp
     CONSECUTIVE_FAILURES        NUMBER(5,0) DEFAULT 0,     -- Count of consecutive processing failures

@@ -12,7 +12,7 @@
 USE DATABASE FIN_TRADE_EXTRACT;
 USE SCHEMA RAW;
 USE WAREHOUSE FIN_TRADE_WH;
-USE ROLE ETL_ROLE;
+USE ROLE ACCOUNTADMIN;
 
 -- ============================================================================
 -- 1) Create/Update Company Overview Staging Table
@@ -80,7 +80,17 @@ CREATE OR REPLACE TABLE RAW.COMPANY_OVERVIEW_STAGING (
 COMMENT = 'Staging table for company overview data from Alpha Vantage OVERVIEW function';
 
 -- ============================================================================
--- 2) Copy Recent Company Overview Files from S3
+-- 2) Create Company Overview Stage if it doesn't exist
+-- ============================================================================
+
+-- Create external stage pointing to S3 company overview folder
+CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGE
+    URL = 's3://fin-trade-craft-landing/'
+    STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION
+    FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT);
+
+-- ============================================================================
+-- 3) Copy Recent Company Overview Files from S3
 -- ============================================================================
 
 -- Copy all company overview files from the last 7 days
@@ -88,7 +98,7 @@ COMMENT = 'Staging table for company overview data from Alpha Vantage OVERVIEW f
 COPY INTO RAW.COMPANY_OVERVIEW_STAGING
 FROM @COMPANY_OVERVIEW_STAGE
 PATTERN = '.*company_overview/[0-9]{4}/[0-9]{2}/[0-9]{2}/overview_.*\\.csv'
-FILE_FORMAT = (FORMAT_NAME = 'RAW_CSV_FORMAT')
+FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
 ON_ERROR = 'CONTINUE'
 PURGE = FALSE;
 
@@ -101,7 +111,7 @@ GROUP BY LOAD_DATE
 ORDER BY LOAD_DATE DESC;
 
 -- ============================================================================
--- 3) Merge Company Overview Data into Final Table
+-- 4) Merge Company Overview Data into Final Table
 -- ============================================================================
 
 -- Merge staging data into the main OVERVIEW table (or COMPANY_OVERVIEW if it exists)
@@ -266,7 +276,7 @@ WHEN NOT MATCHED THEN INSERT (
 );
 
 -- ============================================================================
--- 4) Update ETL Watermarks
+-- 5) Update ETL Watermarks
 -- ============================================================================
 
 -- Update watermarks for successfully processed symbols
@@ -296,7 +306,7 @@ WHEN NOT MATCHED THEN INSERT (
 );
 
 -- ============================================================================
--- 5) Verification and Cleanup
+-- 6) Verification and Cleanup
 -- ============================================================================
 
 -- Show processing results

@@ -441,7 +441,8 @@ class IncrementalETLManager:
             return 0
 
     def update_processing_status(self, symbol: str, data_type: str, success: bool, 
-                               error_message: Optional[str] = None, processing_mode: str = 'incremental'):
+                               error_message: Optional[str] = None, processing_mode: str = 'incremental',
+                               fiscal_date: Optional[str] = None, first_fiscal_date: Optional[str] = None):
         """
         Update processing status for a symbol and data type.
         
@@ -451,6 +452,8 @@ class IncrementalETLManager:
             success: Whether processing was successful
             error_message: Optional error message if processing failed
             processing_mode: Processing mode used
+            fiscal_date: Latest fiscal/data date processed (for LAST_FISCAL_DATE)
+            first_fiscal_date: Earliest fiscal/data date available (for FIRST_FISCAL_DATE, time series only)
         """
         try:
             conn = self.get_connection()
@@ -499,14 +502,21 @@ class IncrementalETLManager:
             USING (SELECT %s as table_name, %s as symbol_id, %s as symbol) AS source
             ON target.TABLE_NAME = source.table_name AND target.SYMBOL_ID = source.symbol_id
             WHEN MATCHED THEN UPDATE SET
+                FIRST_FISCAL_DATE = CASE 
+                    WHEN %s IS NOT NULL AND (target.FIRST_FISCAL_DATE IS NULL OR %s < target.FIRST_FISCAL_DATE) 
+                    THEN %s 
+                    ELSE target.FIRST_FISCAL_DATE 
+                END,
+                LAST_FISCAL_DATE = CASE WHEN %s IS NOT NULL THEN %s ELSE target.LAST_FISCAL_DATE END,
                 LAST_SUCCESSFUL_RUN = CASE WHEN %s THEN %s ELSE target.LAST_SUCCESSFUL_RUN END,
                 CONSECUTIVE_FAILURES = CASE WHEN %s THEN 0 ELSE target.CONSECUTIVE_FAILURES + 1 END,
                 UPDATED_AT = %s
             WHEN NOT MATCHED THEN INSERT (
                 TABLE_NAME, SYMBOL_ID, SYMBOL, IPO_DATE, DELISTING_DATE, 
-                LAST_SUCCESSFUL_RUN, CONSECUTIVE_FAILURES, CREATED_AT, UPDATED_AT
+                FIRST_FISCAL_DATE, LAST_FISCAL_DATE, LAST_SUCCESSFUL_RUN, CONSECUTIVE_FAILURES, CREATED_AT, UPDATED_AT
             ) VALUES (
                 %s, %s, %s, %s, %s,
+                %s, %s,
                 CASE WHEN %s THEN %s ELSE NULL END,
                 CASE WHEN %s THEN 0 ELSE 1 END, %s, %s
             )
@@ -516,10 +526,15 @@ class IncrementalETLManager:
             cursor.execute(watermark_query, (
                 # USING clause
                 table_name, symbol_id, symbol,
-                # WHEN MATCHED SET values
+                # WHEN MATCHED SET values for FIRST_FISCAL_DATE
+                first_fiscal_date, first_fiscal_date, first_fiscal_date,
+                # WHEN MATCHED SET values for LAST_FISCAL_DATE
+                fiscal_date, fiscal_date,
+                # WHEN MATCHED SET values for processing status
                 success, now, success, now,
                 # WHEN NOT MATCHED INSERT values  
                 table_name, symbol_id, symbol, ipo_date, delisting_date,
+                first_fiscal_date, fiscal_date,
                 success, now, success, now, now
             ))
             

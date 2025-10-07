@@ -239,6 +239,47 @@ def fetch_time_series_data(symbol: str, api_key: str, rate_limiter: AlphaVantage
     return None
 
 
+def extract_fiscal_dates_from_csv(csv_data: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Extract first and last fiscal dates from time series CSV data.
+    
+    Returns:
+        Tuple of (first_fiscal_date, last_fiscal_date) or (None, None) if parsing fails
+    """
+    try:
+        lines = csv_data.strip().split('\n')
+        if len(lines) < 2:  # Need header + at least one data row
+            return None, None
+        
+        # Parse CSV to extract dates (first column should be 'timestamp')
+        dates = []
+        for line in lines[1:]:  # Skip header
+            parts = line.split(',')
+            if parts and parts[0]:
+                try:
+                    # Parse date in YYYY-MM-DD format
+                    date_str = parts[0].strip()
+                    datetime.strptime(date_str, '%Y-%m-%d')  # Validate format
+                    dates.append(date_str)
+                except ValueError:
+                    continue
+        
+        if not dates:
+            return None, None
+        
+        # Sort to get first and last dates
+        dates.sort()
+        first_date = dates[0]
+        last_date = dates[-1]
+        
+        logger.debug(f"Extracted date range: {first_date} to {last_date} ({len(dates)} data points)")
+        return first_date, last_date
+        
+    except Exception as e:
+        logger.warning(f"Could not extract fiscal dates from CSV: {e}")
+        return None, None
+
+
 def upload_to_s3(csv_data: str, symbol: str, load_date: str, bucket: str, 
                 s3_prefix: str, region: str) -> bool:
     """Upload CSV data to S3."""
@@ -249,20 +290,32 @@ def upload_to_s3(csv_data: str, symbol: str, load_date: str, bucket: str,
         
         row_count = len(csv_data.strip().split('\n')) - 1
         
+        # Extract fiscal date range for metadata
+        first_date, last_date = extract_fiscal_dates_from_csv(csv_data)
+        
+        metadata_dict = {
+            'symbol': symbol,
+            'load_date': load_date,
+            'row_count': str(row_count),
+            'upload_timestamp': datetime.utcnow().isoformat()
+        }
+        
+        # Add fiscal dates to metadata if available
+        if first_date:
+            metadata_dict['first_fiscal_date'] = first_date
+        if last_date:
+            metadata_dict['last_fiscal_date'] = last_date
+        
         s3_client.put_object(
             Bucket=bucket,
             Key=s3_key,
             Body=csv_data.encode('utf-8'),
             ContentType='text/csv',
-            Metadata={
-                'symbol': symbol,
-                'load_date': load_date,
-                'row_count': str(row_count),
-                'upload_timestamp': datetime.utcnow().isoformat()
-            }
+            Metadata=metadata_dict
         )
         
-        logger.info(f"✅ Uploaded {symbol} to S3: {row_count} rows")
+        date_info = f" ({first_date} to {last_date})" if first_date and last_date else ""
+        logger.info(f"✅ Uploaded {symbol} to S3: {row_count} rows{date_info}")
         return True
         
     except Exception as e:
@@ -340,18 +393,74 @@ def process_symbols_in_batches(symbols: List[str], api_key: str, batch_size: int
             csv_data = fetch_time_series_data(symbol, api_key, rate_limiter)
             
             if csv_data:
+                # Extract fiscal dates before upload
+                first_fiscal_date, last_fiscal_date = extract_fiscal_dates_from_csv(csv_data)
+                
                 # Upload to S3
                 if upload_to_s3(csv_data, symbol, load_date, bucket, s3_prefix, region):
                     results['successful'] += 1
                     batch_success += 1
+                    
+                    # Update ETL watermarks with fiscal date information
+                    try:
+                        from utils.incremental_etl import IncrementalETLManager, get_snowflake_config_from_env
+                        snowflake_config = get_snowflake_config_from_env()
+                        etl_manager = IncrementalETLManager(snowflake_config)
+                        etl_manager.update_processing_status(
+                            symbol=symbol,
+                            data_type='time_series_daily_adjusted',
+                            success=True,
+                            processing_mode='bulk',
+                            fiscal_date=last_fiscal_date,
+                            first_fiscal_date=first_fiscal_date
+                        )
+                        etl_manager.close_connection()
+                        logger.debug(f"✅ Updated watermarks for {symbol}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not update watermarks for {symbol}: {e}")
+                        # Don't fail the whole process for watermark issues
+                    
                 else:
                     results['failed'] += 1
                     results['failed_symbols'].append(f"{symbol} (S3 upload failed)")
                     batch_failed += 1
+                    
+                    # Update watermark with failure status
+                    try:
+                        from utils.incremental_etl import IncrementalETLManager, get_snowflake_config_from_env
+                        snowflake_config = get_snowflake_config_from_env()
+                        etl_manager = IncrementalETLManager(snowflake_config)
+                        etl_manager.update_processing_status(
+                            symbol=symbol,
+                            data_type='time_series_daily_adjusted',
+                            success=False,
+                            error_message="S3 upload failed",
+                            processing_mode='bulk'
+                        )
+                        etl_manager.close_connection()
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not update watermarks for failed {symbol}: {e}")
+                    
             else:
                 results['failed'] += 1
                 results['failed_symbols'].append(f"{symbol} (API fetch failed)")
                 batch_failed += 1
+                
+                # Update watermark with failure status
+                try:
+                    from utils.incremental_etl import IncrementalETLManager, get_snowflake_config_from_env
+                    snowflake_config = get_snowflake_config_from_env()
+                    etl_manager = IncrementalETLManager(snowflake_config)
+                    etl_manager.update_processing_status(
+                        symbol=symbol,
+                        data_type='time_series_daily_adjusted',
+                        success=False,
+                        error_message="API fetch failed",
+                        processing_mode='bulk'
+                    )
+                    etl_manager.close_connection()
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not update watermarks for failed {symbol}: {e}")
         
         # Batch completion summary
         batch_time = time.time() - batch_start_time

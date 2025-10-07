@@ -236,8 +236,62 @@ class BalanceSheetExtractor:
             logger.warning(f"⚠️ Error applying filters, using unfiltered list: {e}")
             return symbols
 
+    def check_time_series_availability(self, symbol: str) -> tuple[Optional[str], Optional[str]]:
+        """
+        Check if time series data is available for the symbol and return date boundaries.
+        
+        Returns:
+            Tuple of (first_fiscal_date, last_fiscal_date) from time series watermarks
+        """
+        try:
+            conn = snowflake.connector.connect(**self.snowflake_config)
+            cursor = conn.cursor()
+            
+            query = """
+            SELECT FIRST_FISCAL_DATE, LAST_FISCAL_DATE
+            FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+            WHERE TABLE_NAME = 'TIME_SERIES_DAILY_ADJUSTED'
+              AND SYMBOL = %s
+              AND FIRST_FISCAL_DATE IS NOT NULL
+              AND LAST_SUCCESSFUL_RUN IS NOT NULL
+            """
+            
+            cursor.execute(query, (symbol,))
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result:
+                first_date = result[0].strftime('%Y-%m-%d') if result[0] else None
+                last_date = result[1].strftime('%Y-%m-%d') if result[1] else None
+                return first_date, last_date
+            else:
+                return None, None
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Could not check time series availability for {symbol}: {e}")
+            return None, None
+
     def fetch_balance_sheet(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Fetch balance sheet data for a single symbol."""
+        """Fetch balance sheet data for a single symbol with time series optimization."""
+        # First check if we have time series data for this symbol
+        first_ts_date, last_ts_date = self.check_time_series_availability(symbol)
+        
+        if not first_ts_date:
+            logger.info(f"⏭️ Skipping {symbol}: No time series data available yet (fundamentals optimization)")
+            return None
+        
+        # Check if time series data is recent enough (at least 90 days of history)
+        try:
+            first_date_obj = datetime.strptime(first_ts_date, '%Y-%m-%d')
+            days_of_history = (datetime.now() - first_date_obj).days
+            if days_of_history < 90:
+                logger.info(f"⏭️ Skipping {symbol}: Insufficient time series history ({days_of_history} days)")
+                return None
+        except ValueError:
+            logger.warning(f"⚠️ Could not parse first fiscal date for {symbol}: {first_ts_date}")
+        
+        logger.debug(f"✅ Time series available for {symbol}: {first_ts_date} to {last_ts_date}")
+        
         url = "https://www.alphavantage.co/query"
         
         params = {
