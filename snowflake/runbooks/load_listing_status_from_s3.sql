@@ -129,10 +129,11 @@ FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING
 WHERE source_file LIKE '%delisted%'
 LIMIT 5;
 
--- 4) Merge into final table (upsert by symbol with deduplication)
--- First, create a deduplicated view of staging data prioritizing active over delisted
-MERGE INTO FIN_TRADE_EXTRACT.RAW.LISTING_STATUS tgt
-USING (
+-- 4) Create a deduplicated staging view first
+CREATE OR REPLACE TEMPORARY TABLE FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_DEDUPED AS
+SELECT 
+  symbol, name, exchange, assetType, ipoDate, delistingDate, status, load_date
+FROM (
   SELECT 
     symbol, name, exchange, assetType, ipoDate, delistingDate, status, load_date,
     ROW_NUMBER() OVER (
@@ -143,9 +144,16 @@ USING (
     ) as rn
   FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING
   WHERE symbol IS NOT NULL AND TRIM(symbol) != ''
-) src
+) ranked
+WHERE rn = 1;
+
+-- Debug: Check deduplication results
+SELECT COUNT(*) as deduplicated_rows FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_DEDUPED;
+
+-- 5) Merge deduplicated data into final table
+MERGE INTO FIN_TRADE_EXTRACT.RAW.LISTING_STATUS tgt
+USING FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_DEDUPED src
 ON UPPER(TRIM(tgt.symbol)) = UPPER(TRIM(src.symbol))
-WHERE src.rn = 1  -- Only take the first (preferred) record per symbol
 WHEN MATCHED THEN UPDATE SET
   name = src.name,
   exchange = src.exchange,
@@ -160,7 +168,7 @@ WHEN NOT MATCHED THEN INSERT (
   src.symbol, src.name, src.exchange, src.assetType, src.ipoDate, src.delistingDate, src.status, src.load_date
 );
 
--- 5) Verify final results
+-- 6) Verify final results
 SELECT COUNT(*) AS total_symbols FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS;
 
 -- Check distribution by status
