@@ -152,29 +152,14 @@ class BalanceSheetExtractor:
     
     def _get_fundamentals_eligible_symbols(self) -> List[str]:
         """Get symbols eligible for fundamentals data (typically larger companies)."""
+        # For now, use the basic symbol list approach since advanced screening is having issues
+        # TODO: Re-enable advanced screening once asset type mapping is confirmed
+        logger.info("📈 Using basic symbol screening for fundamentals eligibility")
         try:
-            screener = SymbolScreener(self.snowflake_config)
-            
-            # Create criteria for fundamentals-eligible symbols
-            # Typically: Active stocks/ETFs with reasonable market presence
-            criteria = ScreeningCriteria(
-                exchanges=[ExchangeType.NASDAQ, ExchangeType.NYSE, ExchangeType.AMEX],
-                asset_types=[AssetType.EQUITY],  # Focus on equities for fundamentals
-                min_price=5.0,  # Filter out penny stocks
-                min_market_cap=100_000_000,  # $100M+ market cap
-                min_avg_volume=100_000  # Reasonable trading volume
-            )
-            
-            results = screener.screen_symbols(criteria)
-            symbols = [r['symbol'] for r in results]
-            
-            logger.info(f"📈 Found {len(symbols)} fundamentals-eligible symbols")
-            return symbols
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Error screening symbols, using fallback: {e}")
-            # Fallback to basic query if screening fails
             return self._get_basic_symbol_list()
+        except Exception as e:
+            logger.error(f"❌ Error getting basic symbol list: {e}")
+            return []
     
     def _get_basic_symbol_list(self) -> List[str]:
         """Fallback method to get basic symbol list from listing status."""
@@ -186,11 +171,13 @@ class BalanceSheetExtractor:
             SELECT DISTINCT symbol 
             FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS
             WHERE status = 'Active' 
-                AND assetType IN ('Stock')
+                AND assetType LIKE '%Stock%'  -- More flexible matching
                 AND exchange IN ('NASDAQ', 'NYSE', 'AMEX')
                 AND symbol IS NOT NULL 
                 AND symbol != ''
+                AND LEN(symbol) <= 5  -- Reasonable symbol length filter
             ORDER BY symbol
+            LIMIT 1000  -- Limit for testing phase
             """
             
             cursor.execute(query)

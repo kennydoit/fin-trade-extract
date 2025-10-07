@@ -206,8 +206,15 @@ class IncrementalETLManager:
             symbol_list = "', '".join(symbols)
             query += f" HAVING symbol IN ('{symbol_list}')"
         
-        cursor.execute(query)
-        results = cursor.fetchall()
+        try:
+            cursor.execute(query)
+            results = cursor.fetchall()
+        except Exception as e:
+            if "does not exist" in str(e).lower() or "invalid identifier" in str(e).lower():
+                logger.info(f"Table {config.table_name} does not exist yet, returning empty timestamps for first run")
+                return {}
+            else:
+                raise e
         
         last_updates = {}
         for symbol, last_update in results:
