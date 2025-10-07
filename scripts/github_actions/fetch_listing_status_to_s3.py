@@ -4,16 +4,15 @@ import csv
 import requests
 import boto3
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
-def fetch_listing_status(api_key, state="active", date=None):
+def fetch_listing_status(api_key, state="active"):
     """
     Fetch listing status from Alpha Vantage API.
     
     Args:
         api_key: Alpha Vantage API key
-        state: "active" for listed stocks, "delisted" for delisted stocks
-        date: Optional date for delisted stocks (YYYY-MM-DD format)
+        state: "active" for currently listed stocks, "delisted" for delisted stocks
     
     Returns:
         Response text content
@@ -26,8 +25,6 @@ def fetch_listing_status(api_key, state="active", date=None):
     
     if state == "delisted":
         params["state"] = "delisted"
-        if date:
-            params["date"] = date
     
     url = f"{base_url}?" + "&".join([f"{k}={v}" for k, v in params.items()])
     print(f"🔄 Fetching {state.upper()} stocks from Alpha Vantage...")
@@ -58,7 +55,6 @@ def main():
     bucket = os.environ.get("S3_BUCKET")
     s3_prefix = os.environ.get("S3_LISTING_STATUS_PREFIX", "listing_status/")
     region = os.environ.get("AWS_REGION", "us-east-1")
-    delisted_date = os.environ.get("DELISTED_DATE")  # Optional: specific date for delisted stocks
     
     if not api_key or not bucket:
         print("❌ Missing ALPHAVANTAGE_API_KEY or S3_BUCKET env var", file=sys.stderr)
@@ -76,8 +72,9 @@ def main():
     print(f"🗓️ Date: {today}")
     print(f"🪣 S3 Bucket: {bucket}")
     print(f"📁 S3 Prefix: {s3_prefix}")
+    print("🔄 Fetching both active and delisted stocks automatically")
     
-    # 1) Fetch ACTIVE (listed) stocks
+    # 1) Fetch ACTIVE (currently listed) stocks
     print("\n" + "=" * 40)
     print("📈 FETCHING ACTIVE STOCKS")
     print("=" * 40)
@@ -97,21 +94,14 @@ def main():
     print("\n⏱️ Waiting 12 seconds between API calls (rate limiting)...")
     time.sleep(12)
     
-    # 2) Fetch DELISTED stocks
+    # 2) Fetch DELISTED stocks (Alpha Vantage returns all delisted stocks automatically)
     print("\n" + "=" * 40)
     print("📉 FETCHING DELISTED STOCKS")
     print("=" * 40)
-    
-    # Use provided date or default to 1 year ago for comprehensive delisted data
-    if not delisted_date:
-        one_year_ago = datetime.now() - timedelta(days=365)
-        delisted_date = one_year_ago.strftime("%Y-%m-%d")
-        print(f"🗓️ Using default delisted date: {delisted_date}")
-    else:
-        print(f"🗓️ Using provided delisted date: {delisted_date}")
+    print("📋 Alpha Vantage will return all available delisted stocks")
     
     try:
-        delisted_content = fetch_listing_status(api_key, state="delisted", date=delisted_date)
+        delisted_content = fetch_listing_status(api_key, state="delisted")
         if delisted_content:
             key = f"{s3_prefix}listing_status_delisted_{today}.csv"
             upload_to_s3(s3, bucket, key, delisted_content)
