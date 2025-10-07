@@ -382,13 +382,33 @@ class UniverseManager:
             
         except Exception as e:
             logger.error(f"Failed to create NASDAQ universe: {e}")
+
+        # NYSE Composite (simplified - from LISTING_STATUS)
+        try:
+            nyse_symbols = self._get_symbols_by_exchange('NYSE')
+            nyse_universe = UniverseDefinition(
+                name='nyse_composite',
+                description='All NYSE listed securities',
+                symbols=nyse_symbols,
+                created_date=datetime.now(),
+                last_updated=datetime.now(),
+                source='listing_status_extract',
+                criteria={'exchange': 'NYSE', 'status': 'Active'}
+            )
+            self.save_universe(nyse_universe, overwrite=True)
+            logger.info(f"Created NYSE Composite universe: {len(nyse_symbols)} symbols")
+            
+        except Exception as e:
+            logger.error(f"Failed to create NYSE universe: {e}")
         
         # High Quality NASDAQ (using screener criteria)
         try:
             from .symbol_screener import SymbolScreener, ScreeningCriteria, ExchangeType, AssetType
             
             screener = SymbolScreener(self.snowflake_config)
-            criteria = ScreeningCriteria(
+            
+            # NASDAQ High Quality
+            nasdaq_criteria = ScreeningCriteria(
                 exchanges=[ExchangeType.NASDAQ],
                 asset_types=[AssetType.EQUITY],
                 min_price=10.0,
@@ -397,23 +417,48 @@ class UniverseManager:
                 min_data_quality_score=0.9
             )
             
-            screened_results = screener.screen_symbols(criteria)
-            screened_symbols = [s['symbol'] for s in screened_results]
+            nasdaq_results = screener.screen_symbols(nasdaq_criteria)
+            nasdaq_quality_symbols = [s['symbol'] for s in nasdaq_results]
             
-            quality_universe = UniverseDefinition(
+            nasdaq_quality_universe = UniverseDefinition(
                 name='nasdaq_high_quality',
                 description='High-quality NASDAQ securities (>$10, >1M volume, >0.9 quality)',
-                symbols=screened_symbols,
+                symbols=nasdaq_quality_symbols,
                 created_date=datetime.now(),
                 last_updated=datetime.now(),
                 source='symbol_screener',
-                criteria=asdict(criteria)
+                criteria=asdict(nasdaq_criteria)
             )
-            self.save_universe(quality_universe, overwrite=True)
-            logger.info(f"Created high-quality NASDAQ universe: {len(screened_symbols)} symbols")
+            self.save_universe(nasdaq_quality_universe, overwrite=True)
+            logger.info(f"Created high-quality NASDAQ universe: {len(nasdaq_quality_symbols)} symbols")
+
+            # NYSE High Quality
+            nyse_criteria = ScreeningCriteria(
+                exchanges=[ExchangeType.NYSE],
+                asset_types=[AssetType.EQUITY],
+                min_price=10.0,
+                min_avg_volume=1000000,
+                exclude_penny_stocks=True,
+                min_data_quality_score=0.9
+            )
+            
+            nyse_results = screener.screen_symbols(nyse_criteria)
+            nyse_quality_symbols = [s['symbol'] for s in nyse_results]
+            
+            nyse_quality_universe = UniverseDefinition(
+                name='nyse_high_quality',
+                description='High-quality NYSE securities (>$10, >1M volume, >0.9 quality)',
+                symbols=nyse_quality_symbols,
+                created_date=datetime.now(),
+                last_updated=datetime.now(),
+                source='symbol_screener',
+                criteria=asdict(nyse_criteria)
+            )
+            self.save_universe(nyse_quality_universe, overwrite=True)
+            logger.info(f"Created high-quality NYSE universe: {len(nyse_quality_symbols)} symbols")
             
         except Exception as e:
-            logger.error(f"Failed to create high-quality universe: {e}")
+            logger.error(f"Failed to create high-quality universes: {e}")
 
     def _get_symbols_by_exchange(self, exchange: str) -> List[str]:
         """Helper method to get symbols by exchange from LISTING_STATUS."""

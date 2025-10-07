@@ -87,8 +87,12 @@ def get_symbols_to_process(processing_mode: str = 'incremental',
             # Get incremental processing plan
             logger.info(f"🔄 Generating incremental processing plan for {universe_name}...")
             
+            # Get exchange filter from environment (defaults to NASDAQ for backwards compatibility)
+            exchange_filter = os.environ.get('EXCHANGE_FILTER', 'NASDAQ')
+            logger.info(f"🏢 Exchange filter: {exchange_filter}")
+            
             # First get all symbols in the universe
-            universe_symbols = etl_manager.get_universe_symbols(exchange_filter='NASDAQ')
+            universe_symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
             logger.info(f"📊 Found {len(universe_symbols)} symbols in universe")
             
             # Then identify which ones need processing for time series data
@@ -106,22 +110,24 @@ def get_symbols_to_process(processing_mode: str = 'incremental',
         elif processing_mode == 'full_refresh':
             # Get all symbols from universe regardless of processing status
             logger.info(f"🔄 Full refresh mode: getting all symbols from universe...")
-            symbols = etl_manager.get_universe_symbols(exchange_filter='NASDAQ')
+            exchange_filter = os.environ.get('EXCHANGE_FILTER', 'NASDAQ')
+            symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
             if not symbols:
-                logger.warning(f"No symbols found - falling back to NASDAQ query")
-                symbols = etl_manager._get_nasdaq_symbols_fallback()
+                logger.warning(f"No symbols found - falling back to {exchange_filter} query")
+                symbols = etl_manager._get_exchange_symbols_fallback(exchange_filter)
                 
         elif processing_mode == 'universe':
             # Process entire universe (skip dependency/recency checks)
             logger.info(f"🌐 Universe mode: processing all symbols from universe...")
-            symbols = etl_manager.get_universe_symbols(exchange_filter='NASDAQ')
+            exchange_filter = os.environ.get('EXCHANGE_FILTER', 'NASDAQ')
+            symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
             if not symbols:
                 logger.warning(f"No symbols found - creating default universe")
                 # Create default universe if it doesn't exist
                 universe_mgr = UniverseManager(snowflake_config)
                 universe_mgr.create_universe_table()
                 universe_mgr.create_predefined_universes()
-                symbols = etl_manager.get_universe_symbols(exchange_filter='NASDAQ')
+                symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
                 
         else:
             raise ValueError(f"Invalid processing_mode: {processing_mode}")
@@ -360,29 +366,34 @@ def process_symbols_in_batches(symbols: List[str], api_key: str, batch_size: int
 
 # Add fallback method to IncrementalETLManager for when universe doesn't exist
 def _add_fallback_method():
-    """Add fallback method to IncrementalETLManager for NASDAQ symbols."""
+    """Add fallback method to IncrementalETLManager for exchange symbols."""
     
-    def _get_nasdaq_symbols_fallback(self) -> List[str]:
-        """Fallback method to get NASDAQ symbols directly from LISTING_STATUS."""
+    def _get_exchange_symbols_fallback(self, exchange: str = 'NASDAQ') -> List[str]:
+        """Fallback method to get exchange symbols directly from LISTING_STATUS."""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         query = """
         SELECT DISTINCT symbol 
         FROM LISTING_STATUS 
-        WHERE UPPER(exchange) LIKE '%NASDAQ%' 
+        WHERE UPPER(exchange) LIKE %s
           AND symbol IS NOT NULL 
           AND symbol != ''
           AND status = 'Active'
         ORDER BY symbol
         """
         
-        cursor.execute(query)
+        cursor.execute(query, (f'%{exchange.upper()}%',))
         results = cursor.fetchall()
         
         return [row[0] for row in results if row[0]]
     
-    # Add method to IncrementalETLManager class
+    # Keep the old method for backwards compatibility
+    def _get_nasdaq_symbols_fallback(self) -> List[str]:
+        return self._get_exchange_symbols_fallback('NASDAQ')
+    
+    # Add methods to IncrementalETLManager class
+    IncrementalETLManager._get_exchange_symbols_fallback = _get_exchange_symbols_fallback
     IncrementalETLManager._get_nasdaq_symbols_fallback = _get_nasdaq_symbols_fallback
 
 # Add the fallback method
