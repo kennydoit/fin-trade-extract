@@ -13,52 +13,28 @@ USE SCHEMA RAW;
 USE WAREHOUSE FIN_TRADE_WH;
 USE ROLE ETL_ROLE;
 
--- 1) Enhanced ETL Watermark Table
+-- 1) Simplified ETL Watermark Table
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
-    SYMBOL                      VARCHAR(20) NOT NULL,
-    DATA_TYPE                   VARCHAR(50) NOT NULL,
-    
-    -- Data Coverage
-    FIRST_DATA_DATE             DATE,           -- Earliest data point available
-    LAST_DATA_DATE              DATE,           -- Latest data point available  
-    TOTAL_RECORDS               NUMBER(10,0),   -- Total records in database
-    
-    -- ETL Tracking
-    LAST_SUCCESSFUL_PULL        TIMESTAMP_NTZ,  -- Last successful API call
-    LAST_ATTEMPTED_PULL         TIMESTAMP_NTZ,  -- Last API attempt (success or fail)
-    LAST_UPDATE_CHECK           TIMESTAMP_NTZ,  -- Last incremental check
-    
-    -- API Request Metrics
-    TOTAL_API_REQUESTS          NUMBER(10,0) DEFAULT 0,
-    SUCCESSFUL_API_REQUESTS     NUMBER(10,0) DEFAULT 0,
-    FAILED_API_REQUESTS         NUMBER(10,0) DEFAULT 0,
-    CONSECUTIVE_FAILURES        NUMBER(5,0) DEFAULT 0,
-    
-    -- Data Quality Metrics
-    DATA_QUALITY_SCORE          NUMBER(5,3),    -- 0.000-1.000 quality score
-    COMPLETENESS_PCT            NUMBER(5,2),    -- % of expected data present
-    STALENESS_DAYS              NUMBER(5,0),    -- Days since last update
-    
-    -- Status and Metadata
-    STATUS                      VARCHAR(20) DEFAULT 'ACTIVE',  -- ACTIVE, STALE, FAILED, DELISTED
-    ERROR_MESSAGE               VARCHAR(1000),  -- Last error if failed
-    PROCESSING_MODE             VARCHAR(20),    -- incremental, full_refresh, etc.
-    
-    -- Timestamps
+    TABLE_NAME                  VARCHAR(100) NOT NULL,     -- Target table name (e.g., 'BALANCE_SHEET', 'TIME_SERIES_DAILY_ADJUSTED')
+    SYMBOL_ID                   NUMBER(38,0) NOT NULL,     -- Hash-based symbol identifier
+    LAST_FISCAL_DATE            DATE,                      -- Last fiscal/data date available
+    LAST_SUCCESSFUL_RUN         TIMESTAMP_NTZ,             -- Last successful processing timestamp
+    CONSECUTIVE_FAILURES        NUMBER(5,0) DEFAULT 0,     -- Count of consecutive failures
     CREATED_AT                  TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     UPDATED_AT                  TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     
     -- Constraints
-    CONSTRAINT PK_ETL_WATERMARKS PRIMARY KEY (SYMBOL, DATA_TYPE)
+    CONSTRAINT PK_ETL_WATERMARKS PRIMARY KEY (TABLE_NAME, SYMBOL_ID)
 )
-COMMENT = 'Centralized ETL watermarking and data coverage tracking'
-CLUSTER BY (DATA_TYPE, STATUS, LAST_DATA_DATE);
+COMMENT = 'Simplified ETL watermarking table for tracking processing status'
+CLUSTER BY (TABLE_NAME, LAST_SUCCESSFUL_RUN);
 
--- 2) Comprehensive Data Coverage View
+-- 2) Simplified Data Coverage View
 CREATE OR REPLACE VIEW FIN_TRADE_EXTRACT.ANALYTICS.DATA_COVERAGE_DASHBOARD AS
 WITH symbol_universe AS (
-    SELECT DISTINCT
+    SELECT 
         symbol,
+        ABS(HASH(symbol)) % 1000000000 as symbol_id,
         exchange,
         assetType,
         status,
@@ -70,6 +46,7 @@ WITH symbol_universe AS (
 time_series_coverage AS (
     SELECT 
         symbol,
+        ABS(HASH(symbol)) % 1000000000 as symbol_id,
         MIN(date) as first_date,
         MAX(date) as last_date,
         COUNT(*) as total_records,
@@ -81,6 +58,7 @@ time_series_coverage AS (
 balance_sheet_coverage AS (
     SELECT 
         symbol,
+        ABS(HASH(symbol)) % 1000000000 as symbol_id,
         MIN(fiscal_date_ending) as first_date,
         MAX(fiscal_date_ending) as last_date,
         COUNT(*) as total_records,
@@ -89,19 +67,22 @@ balance_sheet_coverage AS (
     GROUP BY symbol
 ),
 
-etl_status AS (
+watermark_status AS (
     SELECT 
-        symbol,
-        data_type,
-        last_processed_at,
-        success,
-        error_message
-    FROM FIN_TRADE_EXTRACT.RAW.LATEST_ETL_STATUS
+        w.table_name,
+        w.symbol_id,
+        w.last_fiscal_date,
+        w.last_successful_run,
+        w.consecutive_failures,
+        w.created_at,
+        w.updated_at
+    FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS w
 )
 
 SELECT 
     -- Symbol Information
     u.symbol,
+    u.symbol_id,
     u.exchange,
     u.assetType,
     u.status as listing_status,
@@ -131,14 +112,11 @@ SELECT
         ELSE 'VERY_STALE'
     END as bs_freshness,
     
-    -- ETL Processing Status
-    etl_ts.last_processed_at as ts_last_processed,
-    etl_ts.success as ts_last_success,
-    etl_ts.error_message as ts_last_error,
-    
-    etl_bs.last_processed_at as bs_last_processed,
-    etl_bs.success as bs_last_success,
-    etl_bs.error_message as bs_last_error,
+    -- Watermark Status
+    wm_ts.last_successful_run as ts_last_successful_run,
+    wm_ts.consecutive_failures as ts_consecutive_failures,
+    wm_bs.last_successful_run as bs_last_successful_run,
+    wm_bs.consecutive_failures as bs_consecutive_failures,
     
     -- Overall Data Availability
     CASE 
@@ -152,32 +130,61 @@ SELECT
     CURRENT_TIMESTAMP() as report_generated_at
 
 FROM symbol_universe u
-LEFT JOIN time_series_coverage ts ON u.symbol = ts.symbol
-LEFT JOIN balance_sheet_coverage bs ON u.symbol = bs.symbol  
-LEFT JOIN etl_status etl_ts ON u.symbol = etl_ts.symbol AND etl_ts.data_type = 'TIME_SERIES_DAILY_ADJUSTED'
-LEFT JOIN etl_status etl_bs ON u.symbol = etl_bs.symbol AND etl_bs.data_type = 'BALANCE_SHEET'
+LEFT JOIN time_series_coverage ts ON u.symbol_id = ts.symbol_id
+LEFT JOIN balance_sheet_coverage bs ON u.symbol_id = bs.symbol_id  
+LEFT JOIN watermark_status wm_ts ON u.symbol_id = wm_ts.symbol_id AND wm_ts.table_name = 'TIME_SERIES_DAILY_ADJUSTED'
+LEFT JOIN watermark_status wm_bs ON u.symbol_id = wm_bs.symbol_id AND wm_bs.table_name = 'BALANCE_SHEET'
 ORDER BY u.symbol;
 
--- 3) API Request Failure Analysis View
-CREATE OR REPLACE VIEW FIN_TRADE_EXTRACT.ANALYTICS.API_FAILURE_ANALYSIS AS
+-- 3) Processing Status Analytics
+CREATE OR REPLACE VIEW FIN_TRADE_EXTRACT.ANALYTICS.ETL_PROCESSING_STATS AS
+WITH processing_summary AS (
+    SELECT 
+        table_name,
+        COUNT(*) as total_symbols,
+        COUNT(CASE WHEN consecutive_failures = 0 THEN 1 END) as successful_symbols,
+        COUNT(CASE WHEN consecutive_failures > 0 THEN 1 END) as failed_symbols,
+        MAX(last_successful_run) as most_recent_run,
+        MIN(last_successful_run) as oldest_run,
+        AVG(consecutive_failures) as avg_consecutive_failures,
+        MAX(consecutive_failures) as max_consecutive_failures
+    FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+    GROUP BY table_name
+),
+
+failure_distribution AS (
+    SELECT 
+        table_name,
+        consecutive_failures,
+        COUNT(*) as symbols_count
+    FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+    WHERE consecutive_failures > 0
+    GROUP BY table_name, consecutive_failures
+)
+
 SELECT 
-    data_type,
-    COUNT(*) as total_symbols,
-    SUM(CASE WHEN success THEN 1 ELSE 0 END) as successful_pulls,
-    SUM(CASE WHEN NOT success THEN 1 ELSE 0 END) as failed_pulls,
-    ROUND(SUM(CASE WHEN success THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as success_rate_pct,
+    ps.table_name,
+    ps.total_symbols,
+    ps.successful_symbols,
+    ps.failed_symbols,
+    ROUND((ps.successful_symbols::FLOAT / ps.total_symbols * 100), 2) as success_rate_pct,
+    ps.most_recent_run,
+    ps.oldest_run,
+    DATEDIFF('hour', ps.most_recent_run, CURRENT_TIMESTAMP()) as hours_since_last_run,
+    ps.avg_consecutive_failures,
+    ps.max_consecutive_failures,
     
-    -- Common error patterns
-    COUNT(CASE WHEN error_message LIKE '%rate limit%' THEN 1 END) as rate_limit_errors,
-    COUNT(CASE WHEN error_message LIKE '%timeout%' THEN 1 END) as timeout_errors,
-    COUNT(CASE WHEN error_message LIKE '%not found%' THEN 1 END) as not_found_errors,
+    -- Failure distribution summary
+    STRING_AGG(fd.consecutive_failures || ' failures: ' || fd.symbols_count || ' symbols', ', ') 
+        WITHIN GROUP (ORDER BY fd.consecutive_failures) as failure_distribution,
+        
+    CURRENT_TIMESTAMP() as report_generated_at
     
-    MIN(last_processed_at) as earliest_attempt,
-    MAX(last_processed_at) as latest_attempt
-    
-FROM FIN_TRADE_EXTRACT.RAW.INCREMENTAL_ETL_STATUS
-GROUP BY data_type
-ORDER BY data_type;
+FROM processing_summary ps
+LEFT JOIN failure_distribution fd ON ps.table_name = fd.table_name
+GROUP BY ps.table_name, ps.total_symbols, ps.successful_symbols, ps.failed_symbols,
+         ps.most_recent_run, ps.oldest_run, ps.avg_consecutive_failures, ps.max_consecutive_failures
+ORDER BY ps.table_name;
 
 -- 4) Stale Data Alert View  
 CREATE OR REPLACE VIEW FIN_TRADE_EXTRACT.ANALYTICS.STALE_DATA_ALERTS AS

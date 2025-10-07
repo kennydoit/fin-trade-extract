@@ -187,7 +187,7 @@ class IncrementalETLManager:
             """
         elif data_type == 'balance_sheet':
             query = """
-            SELECT symbol, MAX(created_at) as last_update
+            SELECT symbol, MAX(COALESCE(load_date, created_at::DATE)) as last_update
             FROM FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET
             WHERE symbol IS NOT NULL
             GROUP BY symbol
@@ -258,7 +258,7 @@ class IncrementalETLManager:
         last_updates = self.get_last_update_timestamps(data_type, universe_symbols)
         
         # Calculate cutoff date based on refresh frequency
-        cutoff_date = datetime.now().date() - timedelta(days=config.refresh_frequency_days)
+        cutoff_datetime = datetime.now() - timedelta(days=config.refresh_frequency_days)
         
         symbols_to_process = []
         symbols_never_processed = []
@@ -270,10 +270,20 @@ class IncrementalETLManager:
             if not last_update:
                 # Never processed
                 symbols_never_processed.append(symbol)
-            elif last_update < cutoff_date:
-                # Data is stale
-                symbols_stale.append(symbol)
-            # else: symbol is up to date, skip
+            else:
+                # Normalize both timestamps for comparison
+                # Convert last_update to datetime if it's a date
+                if hasattr(last_update, 'date'):
+                    # It's already a datetime
+                    last_update_dt = last_update
+                else:
+                    # It's a date, convert to datetime at start of day
+                    last_update_dt = datetime.combine(last_update, datetime.min.time())
+                
+                if last_update_dt < cutoff_datetime:
+                    # Data is stale
+                    symbols_stale.append(symbol)
+                # else: symbol is up to date, skip
         
         # Prioritize never-processed symbols, then stale symbols
         symbols_to_process = symbols_never_processed + symbols_stale
@@ -354,48 +364,37 @@ class IncrementalETLManager:
                 datetime.now()
             ))
             
-            # 2) Update or insert into ETL_WATERMARKS for current state tracking
+            # 2) Update or insert into ETL_WATERMARKS for simplified tracking
+            # Calculate symbol_id (consistent with other tables)
+            symbol_id = abs(hash(symbol)) % 1000000000
+            
+            # Map data_type to table_name
+            table_name = data_type.upper().replace('_', '_')  # Keep as-is for now
+            
             watermark_query = """
             MERGE INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS AS target
-            USING (SELECT %s as symbol, %s as data_type) AS source
-            ON target.SYMBOL = source.symbol AND target.DATA_TYPE = source.data_type
+            USING (SELECT %s as table_name, %s as symbol_id) AS source
+            ON target.TABLE_NAME = source.table_name AND target.SYMBOL_ID = source.symbol_id
             WHEN MATCHED THEN UPDATE SET
-                LAST_ATTEMPTED_PULL = %s,
-                LAST_SUCCESSFUL_PULL = CASE WHEN %s THEN %s ELSE target.LAST_SUCCESSFUL_PULL END,
-                TOTAL_API_REQUESTS = target.TOTAL_API_REQUESTS + 1,
-                SUCCESSFUL_API_REQUESTS = CASE WHEN %s THEN target.SUCCESSFUL_API_REQUESTS + 1 ELSE target.SUCCESSFUL_API_REQUESTS END,
-                FAILED_API_REQUESTS = CASE WHEN %s THEN target.FAILED_API_REQUESTS ELSE target.FAILED_API_REQUESTS + 1 END,
+                LAST_SUCCESSFUL_RUN = CASE WHEN %s THEN %s ELSE target.LAST_SUCCESSFUL_RUN END,
                 CONSECUTIVE_FAILURES = CASE WHEN %s THEN 0 ELSE target.CONSECUTIVE_FAILURES + 1 END,
-                STATUS = CASE 
-                    WHEN %s THEN 'ACTIVE' 
-                    WHEN target.CONSECUTIVE_FAILURES + 1 >= 5 THEN 'FAILED'
-                    ELSE 'STALE' 
-                END,
-                ERROR_MESSAGE = %s,
-                PROCESSING_MODE = %s,
                 UPDATED_AT = %s
             WHEN NOT MATCHED THEN INSERT (
-                SYMBOL, DATA_TYPE, LAST_ATTEMPTED_PULL, LAST_SUCCESSFUL_PULL,
-                TOTAL_API_REQUESTS, SUCCESSFUL_API_REQUESTS, FAILED_API_REQUESTS,
-                CONSECUTIVE_FAILURES, STATUS, ERROR_MESSAGE, PROCESSING_MODE,
-                CREATED_AT, UPDATED_AT
+                TABLE_NAME, SYMBOL_ID, LAST_SUCCESSFUL_RUN, CONSECUTIVE_FAILURES, CREATED_AT, UPDATED_AT
             ) VALUES (
-                %s, %s, %s, CASE WHEN %s THEN %s ELSE NULL END,
-                1, CASE WHEN %s THEN 1 ELSE 0 END, CASE WHEN %s THEN 0 ELSE 1 END,
-                CASE WHEN %s THEN 0 ELSE 1 END, CASE WHEN %s THEN 'ACTIVE' ELSE 'STALE' END,
-                %s, %s, %s, %s
+                %s, %s, CASE WHEN %s THEN %s ELSE NULL END,
+                CASE WHEN %s THEN 0 ELSE 1 END, %s, %s
             )
             """
             
             now = datetime.now()
             cursor.execute(watermark_query, (
                 # USING clause
-                symbol, data_type,
+                table_name, symbol_id,
                 # WHEN MATCHED SET values
-                now, success, now, success, success, success, success, error_message, processing_mode, now,
+                success, now, success, now,
                 # WHEN NOT MATCHED INSERT values  
-                symbol, data_type, now, success, now, success, success, success, success, 
-                error_message, processing_mode, now, now
+                table_name, symbol_id, success, now, success, now, now
             ))
             
             conn.commit()
