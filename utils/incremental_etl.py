@@ -230,6 +230,7 @@ class IncrementalETLManager:
                                   max_symbols: Optional[int] = None) -> List[str]:
         """
         Identify which symbols need processing based on refresh rules.
+        For time series data, excludes delisted stocks that have already been processed.
         
         Args:
             data_type: Type of data to check
@@ -248,14 +249,25 @@ class IncrementalETLManager:
         logger.info(f"Identifying symbols to process for {data_type}")
         logger.info(f"Universe size: {len(universe_symbols)}, Force refresh: {force_refresh}")
         
+        # For time series data, exclude delisted stocks that have been processed
+        # This prevents wasted API calls on stocks that won't have new data
+        working_universe = universe_symbols[:]
+        if data_type == 'time_series_daily_adjusted':
+            delisted_processed = self.get_delisted_and_processed_symbols(data_type, universe_symbols)
+            working_universe = [symbol for symbol in universe_symbols if symbol not in delisted_processed]
+            
+            if len(delisted_processed) > 0:
+                logger.info(f"Excluded {len(delisted_processed)} delisted symbols that have been processed")
+                logger.info(f"Working universe reduced to {len(working_universe)} symbols")
+        
         if force_refresh:
-            # Return all symbols (up to max_symbols)
-            symbols_to_process = universe_symbols[:max_symbols] if max_symbols else universe_symbols
+            # Return all symbols from working universe (up to max_symbols)
+            symbols_to_process = working_universe[:max_symbols] if max_symbols else working_universe
             logger.info(f"Force refresh enabled: processing {len(symbols_to_process)} symbols")
             return symbols_to_process
         
-        # Get last update timestamps for universe symbols
-        last_updates = self.get_last_update_timestamps(data_type, universe_symbols)
+        # Get last update timestamps for working universe symbols
+        last_updates = self.get_last_update_timestamps(data_type, working_universe)
         
         # Calculate cutoff date based on refresh frequency
         cutoff_datetime = datetime.now() - timedelta(days=config.refresh_frequency_days)
@@ -264,7 +276,7 @@ class IncrementalETLManager:
         symbols_never_processed = []
         symbols_stale = []
         
-        for symbol in universe_symbols:
+        for symbol in working_universe:
             last_update = last_updates.get(symbol)
             
             if not last_update:
@@ -298,6 +310,63 @@ class IncrementalETLManager:
         logger.info(f"  - Total to process: {len(symbols_to_process)}")
         
         return symbols_to_process
+
+    def get_delisted_and_processed_symbols(self, data_type: str, 
+                                         universe_symbols: List[str]) -> List[str]:
+        """
+        Get symbols that are delisted AND have been successfully processed.
+        These symbols should be excluded from future processing since they
+        won't generate new time series data.
+        
+        Args:
+            data_type: Type of data to check
+            universe_symbols: List of symbols to check
+            
+        Returns:
+            List of symbols that are delisted and already processed
+        """
+        if not universe_symbols:
+            return []
+            
+        if data_type not in DATA_TYPES:
+            raise ValueError(f"Unknown data type: {data_type}")
+            
+        config = DATA_TYPES[data_type]
+        
+        # Build query to find delisted symbols that have been successfully processed
+        # We check the ETL_WATERMARKS table for symbols with:
+        # 1. DELISTING_DATE is not null (symbol is delisted)
+        # 2. LAST_SUCCESSFUL_RUN is not null (has been processed successfully)
+        symbol_list = "', '".join(universe_symbols)
+        query = f"""
+        SELECT DISTINCT w.symbol
+        FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS w
+        WHERE w.table_name = '{config.table_name}'
+          AND w.symbol IN ('{symbol_list}')
+          AND w.delisting_date IS NOT NULL
+          AND w.last_successful_run IS NOT NULL
+        """
+        
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(query)
+            results = cursor.fetchall()
+        except Exception as e:
+            if "does not exist" in str(e).lower() or "invalid identifier" in str(e).lower():
+                logger.info(f"ETL_WATERMARKS table does not exist yet, no delisted symbols to exclude")
+                return []
+            else:
+                logger.error(f"Error querying delisted symbols: {e}")
+                return []
+        
+        delisted_processed_symbols = [row[0] for row in results]
+        
+        logger.info(f"Found {len(delisted_processed_symbols)} delisted symbols that have been processed for {data_type}")
+        if delisted_processed_symbols:
+            logger.info(f"Excluding delisted symbols: {', '.join(delisted_processed_symbols[:10])}" + 
+                       (f" and {len(delisted_processed_symbols) - 10} more" if len(delisted_processed_symbols) > 10 else ""))
+        
+        return delisted_processed_symbols
 
     def get_symbols_needing_update(self, symbols: List[str], data_type: str, 
                                  staleness_hours: int, max_symbols: Optional[int] = None) -> List[str]:
