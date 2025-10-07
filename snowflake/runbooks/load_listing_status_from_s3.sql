@@ -1,15 +1,10 @@
 -- Load/merge Alpha Vantage LISTING_STATUS (both active and delisted) from S3 into RAW.LISTING_STATUS
--- Set LOAD_DATE to the YYYYMMDD date of the files
+-- Automatically processes all CSV files in the listing_status/ prefix
 
 USE DATABASE FIN_TRADE_EXTRACT;
 USE SCHEMA RAW;
 USE WAREHOUSE FIN_TRADE_WH;
 USE ROLE ACCOUNTADMIN;
-
-SET LOAD_DATE = '20251007';  -- Update this to match your file date
-SET S3_PREFIX = 'listing_status/';
-SET ACTIVE_FILE = 'listing_status_active_' || $LOAD_DATE || '.csv';
-SET DELISTED_FILE = 'listing_status_delisted_' || $LOAD_DATE || '.csv';
 
 -- 1) Create stage if needed
 CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGE
@@ -49,35 +44,25 @@ LIST @LISTING_STATUS_STAGE;
 -- Debug: Preview active file
 SELECT $1, $2, $3, $4, $5, $6, $7 
 FROM @LISTING_STATUS_STAGE
+(FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
 WHERE METADATA$FILENAME LIKE '%active%'
-(FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT) 
 LIMIT 5;
 
 -- Debug: Preview delisted file
 SELECT $1, $2, $3, $4, $5, $6, $7 
 FROM @LISTING_STATUS_STAGE
+(FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
 WHERE METADATA$FILENAME LIKE '%delisted%'
-(FILE_FORMAT => FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT) 
 LIMIT 5;
 
--- Load ACTIVE stocks
+-- Load ALL CSV files (both active and delisted automatically)
 COPY INTO FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING (symbol, name, exchange, assetType, ipoDate, delistingDate, status, source_file)
 FROM (
   SELECT $1, $2, $3, $4, $5, $6, $7, METADATA$FILENAME
   FROM @LISTING_STATUS_STAGE
-  WHERE METADATA$FILENAME LIKE '%active%'
 )
 FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
-ON_ERROR = CONTINUE;
-
--- Load DELISTED stocks
-COPY INTO FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING (symbol, name, exchange, assetType, ipoDate, delistingDate, status, source_file)
-FROM (
-  SELECT $1, $2, $3, $4, $5, $6, $7, METADATA$FILENAME
-  FROM @LISTING_STATUS_STAGE
-  WHERE METADATA$FILENAME LIKE '%delisted%'
-)
-FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
+PATTERN = '.*\\.csv'
 ON_ERROR = CONTINUE;
 
 -- Debug: Check how many rows were loaded from each file
@@ -89,8 +74,8 @@ GROUP BY source_file;
 
 SELECT COUNT(*) as total_rows_loaded FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING;
 
--- Add load_date to staging data
-UPDATE FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING SET load_date = TO_DATE($LOAD_DATE, 'YYYYMMDD');
+-- Add load_date to staging data (use current date)
+UPDATE FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING SET load_date = CURRENT_DATE();
 
 -- Debug: Check staging data before cleanup
 SELECT COUNT(*) as rows_before_cleanup FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING;

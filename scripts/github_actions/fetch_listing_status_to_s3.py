@@ -50,6 +50,33 @@ def upload_to_s3(s3_client, bucket, key, content):
     s3_client.put_object(Bucket=bucket, Key=key, Body=content.encode("utf-8"))
     print(f"✅ Upload complete: {len(content.splitlines())-1} records")
 
+def cleanup_old_files(s3_client, bucket, prefix):
+    """Remove all existing files from the S3 prefix to ensure only fresh data."""
+    print(f"🧹 Cleaning up old files from s3://{bucket}/{prefix}")
+    
+    try:
+        # List all objects with the prefix
+        response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        
+        if 'Contents' in response:
+            objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+            
+            if objects_to_delete:
+                print(f"🗑️ Deleting {len(objects_to_delete)} old files...")
+                s3_client.delete_objects(
+                    Bucket=bucket,
+                    Delete={'Objects': objects_to_delete}
+                )
+                print(f"✅ Cleaned up {len(objects_to_delete)} old files")
+            else:
+                print("📂 No old files to clean up")
+        else:
+            print("📂 S3 prefix is empty - no cleanup needed")
+            
+    except Exception as e:
+        print(f"⚠️ Warning: Could not clean up old files: {e}")
+        # Don't fail the whole process for cleanup issues
+
 def main():
     api_key = os.environ.get("ALPHAVANTAGE_API_KEY")
     bucket = os.environ.get("S3_BUCKET")
@@ -63,6 +90,9 @@ def main():
     s3 = boto3.client("s3", region_name=region)
     today = datetime.utcnow().strftime("%Y%m%d")
     
+    # Clean up old files first
+    cleanup_old_files(s3, bucket, s3_prefix)
+    
     # Track processing results
     results = {"active": False, "delisted": False}
     
@@ -73,6 +103,7 @@ def main():
     print(f"🪣 S3 Bucket: {bucket}")
     print(f"📁 S3 Prefix: {s3_prefix}")
     print("🔄 Fetching both active and delisted stocks automatically")
+    print(f"📁 Files will be: listing_status_active_{today}.csv and listing_status_delisted_{today}.csv")
     
     # 1) Fetch ACTIVE (currently listed) stocks
     print("\n" + "=" * 40)
