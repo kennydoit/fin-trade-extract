@@ -337,15 +337,14 @@ class IncrementalETLManager:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            # Create or update processing status in INCREMENTAL_ETL_STATUS table
-            # This is a simple implementation - you may want to create this table if it doesn't exist
-            query = """
+            # 1) Insert into INCREMENTAL_ETL_STATUS for detailed history
+            status_query = """
             INSERT INTO FIN_TRADE_EXTRACT.RAW.INCREMENTAL_ETL_STATUS 
             (symbol, data_type, last_processed_at, success, error_message, processing_mode, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             
-            cursor.execute(query, (
+            cursor.execute(status_query, (
                 symbol,
                 data_type,
                 datetime.now(),
@@ -353,6 +352,50 @@ class IncrementalETLManager:
                 error_message,
                 processing_mode,
                 datetime.now()
+            ))
+            
+            # 2) Update or insert into ETL_WATERMARKS for current state tracking
+            watermark_query = """
+            MERGE INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS AS target
+            USING (SELECT %s as symbol, %s as data_type) AS source
+            ON target.SYMBOL = source.symbol AND target.DATA_TYPE = source.data_type
+            WHEN MATCHED THEN UPDATE SET
+                LAST_ATTEMPTED_PULL = %s,
+                LAST_SUCCESSFUL_PULL = CASE WHEN %s THEN %s ELSE target.LAST_SUCCESSFUL_PULL END,
+                TOTAL_API_REQUESTS = target.TOTAL_API_REQUESTS + 1,
+                SUCCESSFUL_API_REQUESTS = CASE WHEN %s THEN target.SUCCESSFUL_API_REQUESTS + 1 ELSE target.SUCCESSFUL_API_REQUESTS END,
+                FAILED_API_REQUESTS = CASE WHEN %s THEN target.FAILED_API_REQUESTS ELSE target.FAILED_API_REQUESTS + 1 END,
+                CONSECUTIVE_FAILURES = CASE WHEN %s THEN 0 ELSE target.CONSECUTIVE_FAILURES + 1 END,
+                STATUS = CASE 
+                    WHEN %s THEN 'ACTIVE' 
+                    WHEN target.CONSECUTIVE_FAILURES + 1 >= 5 THEN 'FAILED'
+                    ELSE 'STALE' 
+                END,
+                ERROR_MESSAGE = %s,
+                PROCESSING_MODE = %s,
+                UPDATED_AT = %s
+            WHEN NOT MATCHED THEN INSERT (
+                SYMBOL, DATA_TYPE, LAST_ATTEMPTED_PULL, LAST_SUCCESSFUL_PULL,
+                TOTAL_API_REQUESTS, SUCCESSFUL_API_REQUESTS, FAILED_API_REQUESTS,
+                CONSECUTIVE_FAILURES, STATUS, ERROR_MESSAGE, PROCESSING_MODE,
+                CREATED_AT, UPDATED_AT
+            ) VALUES (
+                %s, %s, %s, CASE WHEN %s THEN %s ELSE NULL END,
+                1, CASE WHEN %s THEN 1 ELSE 0 END, CASE WHEN %s THEN 0 ELSE 1 END,
+                CASE WHEN %s THEN 0 ELSE 1 END, CASE WHEN %s THEN 'ACTIVE' ELSE 'STALE' END,
+                %s, %s, %s, %s
+            )
+            """
+            
+            now = datetime.now()
+            cursor.execute(watermark_query, (
+                # USING clause
+                symbol, data_type,
+                # WHEN MATCHED SET values
+                now, success, now, success, success, success, success, error_message, processing_mode, now,
+                # WHEN NOT MATCHED INSERT values  
+                symbol, data_type, now, success, now, success, success, success, success, 
+                error_message, processing_mode, now, now
             ))
             
             conn.commit()
