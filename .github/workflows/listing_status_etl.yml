@@ -2,8 +2,13 @@ name: Listing Status ETL
 
 on:
   workflow_dispatch:
+    inputs:
+      delisted_date:
+        description: 'Date for delisted stocks (YYYY-MM-DD format, optional - defaults to 1 year ago)'
+        required: false
+        type: string
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
 
 jobs:
   listing-status-etl:
@@ -33,13 +38,22 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Fetch LISTING_STATUS and upload to S3
+      - name: Fetch LISTING_STATUS (Active & Delisted) and upload to S3
         env:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
           S3_BUCKET: fin-trade-craft-landing
           S3_LISTING_STATUS_PREFIX: listing_status/
+          DELISTED_DATE: ${{ github.event.inputs.delisted_date }}
         run: |
+          echo "🚀 Starting enhanced listing status extraction..."
+          echo "📈 Fetching active (listed) stocks"
+          echo "📉 Fetching delisted stocks"
+          if [ -n "$DELISTED_DATE" ]; then
+            echo "🗓️ Using custom delisted date: $DELISTED_DATE"
+          else
+            echo "🗓️ Using default delisted date (1 year ago)"
+          fi
           python scripts/github_actions/fetch_listing_status_to_s3.py
 
       - name: Load LISTING_STATUS into Snowflake
