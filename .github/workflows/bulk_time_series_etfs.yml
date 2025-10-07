@@ -1,0 +1,159 @@
+name: Bulk Time Series ETL - ETFs (Cross-Exchange)
+
+on:
+  workflow_dispatch:
+    inputs:
+      processing_mode:
+        description: 'Processing mode: incremental (smart), full_refresh (all), universe (skip checks)'
+        required: false
+        type: choice
+        options:
+          - incremental
+          - full_refresh
+          - universe
+        default: 'incremental'
+      universe_name:
+        description: 'Universe to process (etf_all_exchanges, etf_high_volume, sector_etfs, etc.)'
+        required: false
+        type: string
+        default: 'etf_all_exchanges'
+      batch_size:
+        description: 'Number of symbols to process per batch'
+        required: false
+        type: number
+        default: 30
+      max_batches:
+        description: 'Maximum number of batches to process (safety limit, blank = no limit)'
+        required: false
+        type: number
+      max_symbols:
+        description: 'Maximum number of symbols to process (testing limit, blank = no limit)'
+        required: false
+        type: number
+      failure_threshold:
+        description: 'Stop if success rate falls below this percentage (0.5 = 50%)'
+        required: false
+        type: number
+        default: 0.5
+  schedule:
+    # Run weekly on Sundays at 4 AM EST for full ETF refresh (after individual exchanges)
+    - cron: '0 9 * * 0'  # Sunday at 9 AM UTC
+
+jobs:
+  bulk-time-series-etl:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240  # 4 hours max (ETFs typically fewer symbols)
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PYTHONUNBUFFERED: '1'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r scripts/github_actions/requirements.txt
+
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Bulk fetch time series data with incremental ETL (ETFs)
+      env:
+        ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+        AWS_REGION: ${{ secrets.AWS_REGION }}
+        S3_BUCKET: fin-trade-craft-landing
+        S3_TIME_SERIES_PREFIX: time_series_daily_adjusted/
+        SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+        SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+        SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+        PROCESSING_MODE: ${{ inputs.processing_mode || 'incremental' }}
+        UNIVERSE_NAME: ${{ inputs.universe_name || 'etf_all_exchanges' }}
+        ASSET_TYPE_FILTER: 'ETF'  # Key difference - filter by asset type instead of exchange
+        BATCH_SIZE: ${{ inputs.batch_size || '30' }}
+        MAX_BATCHES: ${{ inputs.max_batches }}
+        MAX_SYMBOLS: ${{ inputs.max_symbols }}
+        FAILURE_THRESHOLD: ${{ inputs.failure_threshold || '0.5' }}
+        LOAD_DATE: ${{ github.run_number }}${{ github.run_attempt }}
+      run: |
+        echo "📈 Starting incremental time series ETL extraction for ETFs..."
+        echo "🔄 Processing mode: $PROCESSING_MODE"
+        echo "🌐 Universe: $UNIVERSE_NAME"  
+        echo "💼 Asset type filter: $ASSET_TYPE_FILTER"
+        echo "🏢 Exchange scope: All exchanges (NASDAQ, NYSE, AMEX, etc.)"
+        echo "📋 Batch size: $BATCH_SIZE symbols per batch"
+        if [ -n "$MAX_BATCHES" ]; then
+          echo "🛡️ Safety limit: Maximum $MAX_BATCHES batches"
+        else
+          echo "🚀 Processing mode: All available batches"
+        fi
+        if [ -n "$MAX_SYMBOLS" ]; then
+          echo "🔒 Symbol limit: $MAX_SYMBOLS symbols (testing)"
+        fi
+        echo "⚠️ Failure threshold: $FAILURE_THRESHOLD"
+        echo "📅 Load date: $LOAD_DATE"
+        
+        python scripts/github_actions/fetch_time_series_bulk.py
+
+    - name: Load bulk time series data into Snowflake
+      env:
+        SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+        SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+        SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+      run: |
+        echo "🗄️ Loading bulk ETF time series data into Snowflake..."
+        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_time_series_from_s3.sql
+
+    - name: Upload processing results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: etf-processing-results-${{ github.run_number }}
+        path: /tmp/bulk_processing_results.json
+        retention-days: 30
+
+    - name: Summary Report
+      if: always()
+      run: |
+        echo "📈 ETF INCREMENTAL ETL PROCESSING SUMMARY"
+        echo "======================================="
+        echo "🔄 Processing Mode: $PROCESSING_MODE"
+        echo "🌐 Universe: $UNIVERSE_NAME"
+        echo "💼 Asset Type: ETFs (All Exchanges)"
+        echo ""
+        if [ -f /tmp/bulk_processing_results.json ]; then
+          python -c "
+        import json
+        with open('/tmp/bulk_processing_results.json', 'r') as f:
+            results = json.load(f)
+        print(f'📈 Total symbols processed: {results[\"total_symbols\"]}')
+        print(f'✅ Successful: {results[\"successful\"]} ({results[\"successful\"]/results[\"total_symbols\"]*100:.1f}%)')  
+        print(f'❌ Failed: {results[\"failed\"]}')
+        print(f'⏱️  Total processing time: {results[\"total_time_minutes\"]:.1f} minutes')
+        print(f'📈 Ready for Snowflake: {results[\"successful\"]} ETF datasets')
+        
+        # Calculate efficiency metrics
+        if results['total_symbols'] > 0:
+            efficiency = results['successful'] / results['total_time_minutes'] if results['total_time_minutes'] > 0 else 0
+            print(f'⚡ Processing efficiency: {efficiency:.1f} symbols/minute')
+        "
+        else
+          echo "❌ No results file found - check logs for errors"
+        fi

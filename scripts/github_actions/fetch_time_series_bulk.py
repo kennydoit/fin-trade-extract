@@ -87,12 +87,23 @@ def get_symbols_to_process(processing_mode: str = 'incremental',
             # Get incremental processing plan
             logger.info(f"🔄 Generating incremental processing plan for {universe_name}...")
             
-            # Get exchange filter from environment (defaults to NASDAQ for backwards compatibility)
+            # Get filters from environment (defaults to NASDAQ for backwards compatibility)
             exchange_filter = os.environ.get('EXCHANGE_FILTER', 'NASDAQ')
-            logger.info(f"🏢 Exchange filter: {exchange_filter}")
+            asset_type_filter = os.environ.get('ASSET_TYPE_FILTER')
+            
+            if asset_type_filter:
+                logger.info(f"💼 Asset type filter: {asset_type_filter}")
+                logger.info(f"🏢 Exchange scope: All exchanges")
+            else:
+                logger.info(f"🏢 Exchange filter: {exchange_filter}")
             
             # First get all symbols in the universe
-            universe_symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
+            if asset_type_filter:
+                # For asset type filtering (like ETFs), search across all exchanges
+                universe_symbols = etl_manager.get_universe_symbols(asset_type_filter=asset_type_filter)
+            else:
+                # For exchange filtering (like NASDAQ, NYSE), use exchange filter
+                universe_symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
             logger.info(f"📊 Found {len(universe_symbols)} symbols in universe")
             
             # Then identify which ones need processing for time series data
@@ -111,23 +122,41 @@ def get_symbols_to_process(processing_mode: str = 'incremental',
             # Get all symbols from universe regardless of processing status
             logger.info(f"🔄 Full refresh mode: getting all symbols from universe...")
             exchange_filter = os.environ.get('EXCHANGE_FILTER', 'NASDAQ')
-            symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
-            if not symbols:
-                logger.warning(f"No symbols found - falling back to {exchange_filter} query")
-                symbols = etl_manager._get_exchange_symbols_fallback(exchange_filter)
+            asset_type_filter = os.environ.get('ASSET_TYPE_FILTER')
+            
+            if asset_type_filter:
+                symbols = etl_manager.get_universe_symbols(asset_type_filter=asset_type_filter)
+                if not symbols:
+                    logger.warning(f"No {asset_type_filter} symbols found - falling back to direct query")
+                    symbols = etl_manager._get_asset_type_symbols_fallback(asset_type_filter)
+            else:
+                symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
+                if not symbols:
+                    logger.warning(f"No symbols found - falling back to {exchange_filter} query")
+                    symbols = etl_manager._get_exchange_symbols_fallback(exchange_filter)
                 
         elif processing_mode == 'universe':
             # Process entire universe (skip dependency/recency checks)
             logger.info(f"🌐 Universe mode: processing all symbols from universe...")
             exchange_filter = os.environ.get('EXCHANGE_FILTER', 'NASDAQ')
-            symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
+            asset_type_filter = os.environ.get('ASSET_TYPE_FILTER')
+            
+            if asset_type_filter:
+                symbols = etl_manager.get_universe_symbols(asset_type_filter=asset_type_filter)
+            else:
+                symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
+                
             if not symbols:
                 logger.warning(f"No symbols found - creating default universe")
                 # Create default universe if it doesn't exist
                 universe_mgr = UniverseManager(snowflake_config)
                 universe_mgr.create_universe_table()
                 universe_mgr.create_predefined_universes()
-                symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
+                
+                if asset_type_filter:
+                    symbols = etl_manager.get_universe_symbols(asset_type_filter=asset_type_filter)
+                else:
+                    symbols = etl_manager.get_universe_symbols(exchange_filter=exchange_filter)
                 
         else:
             raise ValueError(f"Invalid processing_mode: {processing_mode}")
@@ -388,12 +417,33 @@ def _add_fallback_method():
         
         return [row[0] for row in results if row[0]]
     
+    def _get_asset_type_symbols_fallback(self, asset_type: str = 'ETF') -> List[str]:
+        """Fallback method to get asset type symbols directly from LISTING_STATUS."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        query = """
+        SELECT DISTINCT symbol 
+        FROM LISTING_STATUS 
+        WHERE UPPER(assetType) = %s
+          AND symbol IS NOT NULL 
+          AND symbol != ''
+          AND status = 'Active'
+        ORDER BY symbol
+        """
+        
+        cursor.execute(query, (asset_type.upper(),))
+        results = cursor.fetchall()
+        
+        return [row[0] for row in results if row[0]]
+    
     # Keep the old method for backwards compatibility
     def _get_nasdaq_symbols_fallback(self) -> List[str]:
         return self._get_exchange_symbols_fallback('NASDAQ')
     
     # Add methods to IncrementalETLManager class
     IncrementalETLManager._get_exchange_symbols_fallback = _get_exchange_symbols_fallback
+    IncrementalETLManager._get_asset_type_symbols_fallback = _get_asset_type_symbols_fallback
     IncrementalETLManager._get_nasdaq_symbols_fallback = _get_nasdaq_symbols_fallback
 
 # Add the fallback method

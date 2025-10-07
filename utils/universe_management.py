@@ -456,9 +456,77 @@ class UniverseManager:
             )
             self.save_universe(nyse_quality_universe, overwrite=True)
             logger.info(f"Created high-quality NYSE universe: {len(nyse_quality_symbols)} symbols")
+
+            # ETFs All Exchanges
+            etf_criteria = ScreeningCriteria(
+                exchanges=[ExchangeType.NASDAQ, ExchangeType.NYSE, ExchangeType.AMEX],
+                asset_types=[AssetType.ETF],
+                min_price=5.0,  # Lower threshold for ETFs
+                min_avg_volume=100000,  # Lower volume threshold for ETFs
+                exclude_penny_stocks=True,
+                min_data_quality_score=0.8
+            )
+            
+            etf_results = screener.screen_symbols(etf_criteria)
+            etf_symbols = [s['symbol'] for s in etf_results]
+            
+            etf_universe = UniverseDefinition(
+                name='etf_all_exchanges',
+                description='All ETFs across exchanges (>$5, >100K volume, >0.8 quality)',
+                symbols=etf_symbols,
+                created_date=datetime.now(),
+                last_updated=datetime.now(),
+                source='symbol_screener',
+                criteria=asdict(etf_criteria)
+            )
+            self.save_universe(etf_universe, overwrite=True)
+            logger.info(f"Created ETF all exchanges universe: {len(etf_symbols)} symbols")
+
+            # High Volume ETFs
+            high_volume_etf_criteria = ScreeningCriteria(
+                exchanges=[ExchangeType.NASDAQ, ExchangeType.NYSE, ExchangeType.AMEX],
+                asset_types=[AssetType.ETF],
+                min_price=10.0,
+                min_avg_volume=1000000,  # High volume ETFs
+                exclude_penny_stocks=True,
+                min_data_quality_score=0.9
+            )
+            
+            high_volume_etf_results = screener.screen_symbols(high_volume_etf_criteria)
+            high_volume_etf_symbols = [s['symbol'] for s in high_volume_etf_results]
+            
+            high_volume_etf_universe = UniverseDefinition(
+                name='etf_high_volume',
+                description='High-volume ETFs (>$10, >1M volume, >0.9 quality)',
+                symbols=high_volume_etf_symbols,
+                created_date=datetime.now(),
+                last_updated=datetime.now(),
+                source='symbol_screener',
+                criteria=asdict(high_volume_etf_criteria)
+            )
+            self.save_universe(high_volume_etf_universe, overwrite=True)
+            logger.info(f"Created high-volume ETF universe: {len(high_volume_etf_symbols)} symbols")
             
         except Exception as e:
-            logger.error(f"Failed to create high-quality universes: {e}")
+            logger.error(f"Failed to create high-quality and ETF universes: {e}")
+
+        # Create simple ETF universe from LISTING_STATUS (fallback)
+        try:
+            etf_symbols_simple = self._get_symbols_by_asset_type('ETF')
+            etf_simple_universe = UniverseDefinition(
+                name='etf_simple',
+                description='All ETFs from LISTING_STATUS (no filtering)',
+                symbols=etf_symbols_simple,
+                created_date=datetime.now(),
+                last_updated=datetime.now(),
+                source='listing_status_extract',
+                criteria={'asset_type': 'ETF', 'status': 'Active'}
+            )
+            self.save_universe(etf_simple_universe, overwrite=True)
+            logger.info(f"Created simple ETF universe: {len(etf_symbols_simple)} symbols")
+            
+        except Exception as e:
+            logger.error(f"Failed to create simple ETF universe: {e}")
 
     def _get_symbols_by_exchange(self, exchange: str) -> List[str]:
         """Helper method to get symbols by exchange from LISTING_STATUS."""
@@ -476,6 +544,26 @@ class UniverseManager:
         """
         
         cursor.execute(query, (f'%{exchange.upper()}%',))
+        results = cursor.fetchall()
+        
+        return [row[0] for row in results]
+
+    def _get_symbols_by_asset_type(self, asset_type: str) -> List[str]:
+        """Helper method to get symbols by asset type from LISTING_STATUS."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        query = """
+        SELECT DISTINCT symbol
+        FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS
+        WHERE UPPER(assetType) = %s
+            AND status = 'Active'
+            AND symbol IS NOT NULL
+            AND symbol != ''
+        ORDER BY symbol
+        """
+        
+        cursor.execute(query, (asset_type.upper(),))
         results = cursor.fetchall()
         
         return [row[0] for row in results]
