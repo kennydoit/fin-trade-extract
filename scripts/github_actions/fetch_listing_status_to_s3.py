@@ -34,11 +34,22 @@ def fetch_listing_status(api_key, state="active"):
     resp.raise_for_status()
     content = resp.text
     
+    # Check for common error patterns
+    if "demo" in content.lower() and "apikey" in content.lower():
+        print(f"❌ Demo API key error detected in {state} response", file=sys.stderr)
+        print(f"Response: {content[:500]}...", file=sys.stderr)
+        return None
+    
+    if "invalid api key" in content.lower() or "premium endpoint" in content.lower():
+        print(f"❌ API key issue detected in {state} response", file=sys.stderr)
+        print(f"Response: {content[:500]}...", file=sys.stderr)
+        return None
+    
     # Validate CSV header
     lines = content.splitlines()
     if not lines or not lines[0].lower().startswith("symbol"):
         print(f"❌ Unexpected response from Alpha Vantage for {state} stocks", file=sys.stderr)
-        print(f"Response preview: {content[:200]}...", file=sys.stderr)
+        print(f"Response preview: {content[:500]}...", file=sys.stderr)
         return None
     
     print(f"✅ Successfully fetched {len(lines)-1} {state} symbols")
@@ -86,6 +97,18 @@ def main():
     if not api_key or not bucket:
         print("❌ Missing ALPHAVANTAGE_API_KEY or S3_BUCKET env var", file=sys.stderr)
         sys.exit(2)
+    
+    # Validate API key is not demo
+    if api_key == "demo" or api_key.lower() == "demo":
+        print("❌ Demo API key detected - please use a real Alpha Vantage API key", file=sys.stderr)
+        sys.exit(2)
+    
+    # Debug: Show API key format (mask most of it)
+    if len(api_key) >= 8:
+        masked_key = api_key[:4] + "..." + api_key[-4:]
+        print(f"🔑 Using API key: {masked_key}")
+    else:
+        print("⚠️ API key seems unusually short")
 
     s3 = boto3.client("s3", region_name=region)
     today = datetime.utcnow().strftime("%Y%m%d")

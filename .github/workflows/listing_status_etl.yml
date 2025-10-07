@@ -55,4 +55,5 @@ jobs:
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
         run: |
-          python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_listing_status_from_s3.sql
+          echo "🔄 Loading listing status data into Snowflake with simplified parser-friendly SQL..."
+          python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_listing_status_from_s3_simple.sql
