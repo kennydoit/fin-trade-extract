@@ -124,14 +124,11 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING
 -- Debug: Check what files are in the stage
 LIST @COMPANY_OVERVIEW_STAGE;
 
--- Debug: Check files in date folders specifically
-LIST @COMPANY_OVERVIEW_STAGE PATTERN='.*/[0-9]{4}/[0-9]{2}/[0-9]{2}/.*';
-
--- Load ALL CSV files - using simplified column mapping to avoid column count issues
+-- Load ALL CSV files from company_overview folder (no subfolders)
 COPY INTO FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
 FROM @COMPANY_OVERVIEW_STAGE
 FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
-PATTERN = '.*overview_.*\\.csv'
+PATTERN = 'overview_.*\\.csv'
 ON_ERROR = CONTINUE;
 
 -- Debug: Check how many rows were loaded from each file

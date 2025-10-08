@@ -288,9 +288,8 @@ class CompanyOverviewExtractor:
             df.to_csv(csv_buffer, index=False)
             csv_content = csv_buffer.getvalue()
             
-            # Create S3 key with organized structure (by date for partitioning)
-            date_str = datetime.now().strftime('%Y/%m/%d')
-            s3_key = f"{self.s3_prefix}{date_str}/overview_{symbol}_{self.load_date}.csv"
+            # Create S3 key directly in company_overview folder (no date subfolders)
+            s3_key = f"{self.s3_prefix}overview_{symbol}_{self.load_date}.csv"
             
             # Upload to S3
             self.s3_client.put_object(
