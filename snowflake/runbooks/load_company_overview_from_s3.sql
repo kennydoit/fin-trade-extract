@@ -184,9 +184,35 @@ WHERE (col2, source_file) NOT IN (
 -- Debug: Check staging data after deduplication
 SELECT COUNT(*) as rows_after_dedup FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
 
--- For now, skip the merge and just focus on loading data into staging
--- TODO: Add proper merge once we see what columns are actually loaded
-SELECT 'Staging data loaded - check the sample above to see column structure' as MESSAGE;
+-- Debug: Show all non-null columns from first row to understand structure
+SELECT 'Column mapping analysis:' as MESSAGE;
+
+-- Show first 20 columns from first record
+SELECT 
+  'First 20 columns:' as section,
+  col1, col2, col3, col4, col5, col6, col7, col8, col9, col10,
+  col11, col12, col13, col14, col15, col16, col17, col18, col19, col20
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
+LIMIT 1;
+
+-- Show columns 21-40 from first record  
+SELECT 
+  'Columns 21-40:' as section,
+  col21, col22, col23, col24, col25, col26, col27, col28, col29, col30,
+  col31, col32, col33, col34, col35, col36, col37, col38, col39, col40
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
+LIMIT 1;
+
+-- Show columns 41-60 from first record
+SELECT 
+  'Columns 41-60:' as section,
+  col41, col42, col43, col44, col45, col46, col47, col48, col49, col50,
+  col51, col52, col53, col54, col55, col56, col57, col58, col59, col60
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
+LIMIT 1;
+
+-- For now, don't insert into main table until we understand the column mapping
+SELECT 'Check the debug output above to identify which columns contain Symbol, FiscalYearEnd, LatestQuarter, etc.' as NEXT_STEP;
 
 -- Verify results
 SELECT COUNT(*) AS total_overview_records FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
