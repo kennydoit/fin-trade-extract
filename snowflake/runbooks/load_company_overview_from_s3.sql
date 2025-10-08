@@ -85,9 +85,8 @@ COMMENT = 'Staging table for company overview data from Alpha Vantage OVERVIEW f
 
 -- Create external stage pointing to S3 company overview folder
 CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGE
-    URL = 's3://fin-trade-craft-landing/'
-    STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION
-    FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT);
+  URL='s3://fin-trade-craft-landing/company_overview/'
+  STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION;
 
 -- ============================================================================
 -- 3) Copy Recent Company Overview Files from S3
