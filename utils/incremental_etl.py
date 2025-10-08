@@ -500,13 +500,15 @@ class IncrementalETLManager:
                 FIRST_FISCAL_DATE, LAST_FISCAL_DATE, LAST_SUCCESSFUL_RUN, CONSECUTIVE_FAILURES, CREATED_AT, UPDATED_AT
             ) VALUES (
                 %s, %s, %s, %s, %s,
-                %s, %s,
-                CASE WHEN %s THEN %s ELSE NULL END,
-                CASE WHEN %s THEN 0 ELSE 1 END, %s, %s
+                %s, %s, %s, %s, %s, %s
             )
             """
             
             now = datetime.now()
+            # Calculate INSERT values
+            insert_last_successful_run = now if success else None
+            insert_consecutive_failures = 0 if success else 1
+            
             cursor.execute(watermark_query, (
                 # USING clause
                 table_name, symbol_id, symbol,
@@ -518,8 +520,7 @@ class IncrementalETLManager:
                 success, now, success, now,
                 # WHEN NOT MATCHED INSERT values  
                 table_name, symbol_id, symbol, ipo_date, delisting_date,
-                first_fiscal_date, fiscal_date,
-                success, now, success, now, now
+                first_fiscal_date, fiscal_date, insert_last_successful_run, insert_consecutive_failures, now, now
             ))
             
             conn.commit()
