@@ -284,13 +284,32 @@ class IncrementalETLManager:
                 symbols_never_processed.append(symbol)
             else:
                 # Normalize both timestamps for comparison
-                # Convert last_update to datetime if it's a date
-                if hasattr(last_update, 'date'):
+                # Handle different types that last_update might be
+                if isinstance(last_update, datetime):
                     # It's already a datetime
                     last_update_dt = last_update
-                else:
-                    # It's a date, convert to datetime at start of day
+                elif hasattr(last_update, 'date'):
+                    # It's a date object, convert to datetime at start of day
                     last_update_dt = datetime.combine(last_update, datetime.min.time())
+                elif isinstance(last_update, str):
+                    # It's a string, try to parse it
+                    try:
+                        # Try common date formats
+                        if 'T' in last_update or ' ' in last_update:
+                            # DateTime string
+                            last_update_dt = datetime.fromisoformat(last_update.replace('Z', '+00:00'))
+                        else:
+                            # Date string (YYYY-MM-DD)
+                            last_update_dt = datetime.strptime(last_update, '%Y-%m-%d')
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Could not parse date string '{last_update}' for symbol {symbol}: {e}")
+                        # Treat as never processed if we can't parse the date
+                        symbols_never_processed.append(symbol)
+                        continue
+                else:
+                    # Unknown type, treat as datetime at epoch to force refresh
+                    logger.warning(f"Unknown date type for symbol {symbol}: {type(last_update)} = {last_update}")
+                    last_update_dt = datetime.min
                 
                 if last_update_dt < cutoff_datetime:
                     # Data is stale

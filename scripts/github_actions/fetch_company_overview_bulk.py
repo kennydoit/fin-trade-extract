@@ -36,12 +36,16 @@ from utils.incremental_etl import IncrementalETLManager, get_snowflake_config_fr
 from utils.symbol_screener import SymbolScreener, ScreeningCriteria, AssetType, ExchangeType
 
 # Configure logging
+log_dir = os.getenv('LOG_DIR', os.path.join(os.getcwd(), 'logs'))
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f'company_overview_bulk_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(f'/tmp/company_overview_bulk_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        logging.FileHandler(log_file)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -283,7 +287,7 @@ class CompanyOverviewExtractor:
     def upload_to_s3(self, df: pd.DataFrame, symbol: str) -> bool:
         """Upload processed overview data to S3."""
         try:
-            # Convert DataFrame to CSV
+            # Convert DataFrame to CSV (Snowflake will handle column mapping by name)
             csv_buffer = StringIO()
             df.to_csv(csv_buffer, index=False)
             csv_content = csv_buffer.getvalue()
@@ -386,11 +390,49 @@ class CompanyOverviewExtractor:
             return True
         return False
 
+    def cleanup_s3_bucket(self):
+        """Delete all existing files in the S3 bucket before processing."""
+        logger.info("🧹 Cleaning up S3 bucket before extraction...")
+        
+        try:
+            # List all objects in the company overview prefix
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.s3_bucket,
+                Prefix=self.s3_prefix
+            )
+            
+            if 'Contents' not in response:
+                logger.info("📂 S3 bucket is already empty")
+                return
+            
+            # Delete all objects
+            objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+            
+            if objects_to_delete:
+                logger.info(f"🗑️ Deleting {len(objects_to_delete)} existing files from S3...")
+                
+                self.s3_client.delete_objects(
+                    Bucket=self.s3_bucket,
+                    Delete={'Objects': objects_to_delete}
+                )
+                
+                logger.info(f"✅ Successfully deleted {len(objects_to_delete)} files from s3://{self.s3_bucket}/{self.s3_prefix}")
+            else:
+                logger.info("📂 No files found to delete")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Error cleaning S3 bucket: {e}")
+            # Don't fail the whole process due to cleanup issues
+            logger.info("🔄 Continuing with extraction despite cleanup error...")
+
     def run_bulk_extraction(self):
         """Run the complete bulk company overview extraction process."""
         logger.info("🚀 Starting bulk company overview extraction...")
         
         try:
+            # Clean up S3 bucket first
+            self.cleanup_s3_bucket()
+            
             # Get symbols to process
             symbols = self.get_symbols_to_process()
             if not symbols:
