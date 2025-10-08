@@ -351,17 +351,19 @@ class CompanyOverviewExtractor:
                     continue
                 
                 # Upload to S3
-                if self.upload_to_s3(df, symbol):
+                s3_success = self.upload_to_s3(df, symbol)
+                if s3_success:
                     batch_stats['successful'] += 1
                     self.stats['successful'] += 1
                     # Update processing status with the overview data date (or current date as fallback)
                     fiscal_date = overview_data.get('LatestQuarter', datetime.now().strftime('%Y-%m-%d'))
                     self.update_processing_status(symbol, success=True, fiscal_date=fiscal_date)
-                    logger.info(f"✅ Successfully processed {symbol}")
+                    logger.info(f"✅ Successfully processed and uploaded {symbol} to S3")
                 else:
                     batch_stats['failed'] += 1
                     self.stats['failed'] += 1
                     self.update_processing_status(symbol, success=False)
+                    logger.warning(f"❌ Failed to upload {symbol} to S3")
                     
             except Exception as e:
                 logger.error(f"❌ Error processing {symbol}: {e}")
@@ -441,15 +443,21 @@ class CompanyOverviewExtractor:
         logger.info(f"💼 Asset type filter: {self.asset_type_filter} (FIXED)")
         logger.info(f"🎯 Status filter: {self.status_filter} (FIXED)")
         logger.info(f"📊 Total symbols: {self.stats['total_symbols']}")
-        logger.info(f"✅ Successful: {self.stats['successful']}")
-        logger.info(f"⚠️ Skipped: {self.stats['skipped']}")
-        logger.info(f"❌ Failed: {self.stats['failed']}")
         logger.info(f"🌐 API calls made: {self.stats['api_calls']}")
+        logger.info(f"✅ Successful API + S3 uploads: {self.stats['successful']}")
+        logger.info(f"⚠️ Skipped (no API data): {self.stats['skipped']}")
+        logger.info(f"❌ Failed (API or S3 errors): {self.stats['failed']}")
         logger.info(f"⏱️ Duration: {duration}")
         
         if self.stats['api_calls'] > 0:
             calls_per_minute = (self.stats['api_calls'] / duration.total_seconds()) * 60
             logger.info(f"📈 API rate: {calls_per_minute:.1f} calls/minute")
+        
+        # Additional S3/data insights
+        success_rate = (self.stats['successful'] / self.stats['api_calls']) * 100 if self.stats['api_calls'] > 0 else 0
+        logger.info(f"📈 Success rate: {success_rate:.1f}% (API calls that resulted in S3 files)")
+        logger.info(f"📁 S3 location: s3://{self.s3_bucket}/{self.s3_prefix}")
+        logger.info(f"📝 Expected files in Snowflake staging: {self.stats['successful']}")
         
         # Save results for workflow reporting
         results = {

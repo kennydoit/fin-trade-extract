@@ -214,8 +214,28 @@ LIMIT 1;
 -- For now, don't insert into main table until we understand the column mapping
 SELECT 'Check the debug output above to identify which columns contain Symbol, FiscalYearEnd, LatestQuarter, etc.' as NEXT_STEP;
 
--- Verify results
-SELECT COUNT(*) AS total_overview_records FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
+-- Verify results and show summary
+SELECT 'COMPANY OVERVIEW LOADING SUMMARY:' as MESSAGE;
 
--- Sample records from main table (will be empty until proper mapping is implemented)
-SELECT COUNT(*) as main_table_records FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
+SELECT 
+    'Records in staging table:' as METRIC,
+    COUNT(*) as VALUE
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
+
+SELECT 
+    'Records in main table:' as METRIC,
+    COUNT(*) as VALUE
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
+
+SELECT 
+    'Files processed:' as METRIC,
+    COUNT(DISTINCT source_file) as VALUE
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
+
+-- Show which symbols were loaded
+SELECT 
+    'Symbols loaded:' as MESSAGE,
+    col1 as SYMBOL_LOADED,  -- Assuming col1 is the symbol
+    source_file
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING
+ORDER BY col1;
