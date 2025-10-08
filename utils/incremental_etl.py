@@ -486,15 +486,15 @@ class IncrementalETLManager:
             USING (SELECT %s as table_name, %s as symbol_id, %s as symbol) AS source
             ON target.TABLE_NAME = source.table_name AND target.SYMBOL_ID = source.symbol_id
             WHEN MATCHED THEN UPDATE SET
-                FIRST_FISCAL_DATE = CASE 
+                target.FIRST_FISCAL_DATE = CASE 
                     WHEN %s IS NOT NULL AND (target.FIRST_FISCAL_DATE IS NULL OR %s < target.FIRST_FISCAL_DATE) 
                     THEN %s 
                     ELSE target.FIRST_FISCAL_DATE 
                 END,
-                LAST_FISCAL_DATE = CASE WHEN %s IS NOT NULL THEN %s ELSE target.LAST_FISCAL_DATE END,
-                LAST_SUCCESSFUL_RUN = CASE WHEN %s THEN %s ELSE target.LAST_SUCCESSFUL_RUN END,
-                CONSECUTIVE_FAILURES = CASE WHEN %s THEN 0 ELSE target.CONSECUTIVE_FAILURES + 1 END,
-                UPDATED_AT = %s
+                target.LAST_FISCAL_DATE = CASE WHEN %s IS NOT NULL THEN %s ELSE target.LAST_FISCAL_DATE END,
+                target.LAST_SUCCESSFUL_RUN = CASE WHEN %s THEN %s ELSE target.LAST_SUCCESSFUL_RUN END,
+                target.CONSECUTIVE_FAILURES = CASE WHEN %s THEN 0 ELSE target.CONSECUTIVE_FAILURES + 1 END,
+                target.UPDATED_AT = %s
             WHEN NOT MATCHED THEN INSERT (
                 TABLE_NAME, SYMBOL_ID, SYMBOL, IPO_DATE, DELISTING_DATE, 
                 FIRST_FISCAL_DATE, LAST_FISCAL_DATE, LAST_SUCCESSFUL_RUN, CONSECUTIVE_FAILURES, CREATED_AT, UPDATED_AT
