@@ -15,6 +15,17 @@ USE WAREHOUSE FIN_TRADE_WH;
 USE ROLE ACCOUNTADMIN;
 
 -- ============================================================================
+-- 0) Clean Up - Drop existing tables/stages for fresh start
+-- ============================================================================
+
+-- Drop existing tables
+DROP TABLE IF EXISTS RAW.COMPANY_OVERVIEW_STAGING;
+DROP TABLE IF EXISTS RAW.COMPANY_OVERVIEW;
+
+-- Drop existing stage
+DROP STAGE IF EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGE;
+
+-- ============================================================================
 -- 1) Create/Update Company Overview Staging Table
 -- ============================================================================
 

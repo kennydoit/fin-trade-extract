@@ -237,7 +237,10 @@ class CompanyOverviewExtractor:
                     logger.info(f"📝 No overview data available for {symbol} (likely normal for this symbol type)")
                     return None
                 
-                logger.debug(f"✅ Successfully fetched overview data for {symbol}")
+                # Log key fiscal fields for verification
+                fiscal_year_end = data.get('FiscalYearEnd', 'N/A')
+                latest_quarter = data.get('LatestQuarter', 'N/A')
+                logger.debug(f"✅ Successfully fetched overview data for {symbol} (FiscalYearEnd: {fiscal_year_end}, LatestQuarter: {latest_quarter})")
                 return data
                 
             except requests.exceptions.RequestException as e:
@@ -261,6 +264,12 @@ class CompanyOverviewExtractor:
             processed_data['SYMBOL_ID'] = abs(hash(symbol)) % 1000000000
             processed_data['PROCESSED_DATE'] = datetime.now(timezone.utc).strftime('%Y-%m-%d')
             processed_data['LOAD_DATE'] = self.load_date
+            
+            # Ensure key fiscal fields are included (should already be in API response)
+            fiscal_year_end = processed_data.get('FiscalYearEnd', '')
+            latest_quarter = processed_data.get('LatestQuarter', '')
+            
+            logger.debug(f"📊 Processing {symbol}: FiscalYearEnd='{fiscal_year_end}', LatestQuarter='{latest_quarter}'")
             
             # Convert to DataFrame
             df = pd.DataFrame([processed_data])
