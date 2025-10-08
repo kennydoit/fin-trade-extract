@@ -348,7 +348,8 @@ class IncrementalETLManager:
         """
         
         try:
-            cursor = self.conn.cursor()
+            conn = self.get_connection()
+            cursor = conn.cursor()
             cursor.execute(query)
             results = cursor.fetchall()
         except Exception as e:
@@ -459,24 +460,7 @@ class IncrementalETLManager:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            # 1) Insert into INCREMENTAL_ETL_STATUS for detailed history
-            status_query = """
-            INSERT INTO FIN_TRADE_EXTRACT.RAW.INCREMENTAL_ETL_STATUS 
-            (symbol, data_type, last_processed_at, success, error_message, processing_mode, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """
-            
-            cursor.execute(status_query, (
-                symbol,
-                data_type,
-                datetime.now(),
-                success,
-                error_message,
-                processing_mode,
-                datetime.now()
-            ))
-            
-            # 2) Update or insert into ETL_WATERMARKS for enhanced tracking
+            # Update or insert into ETL_WATERMARKS for enhanced tracking
             # Calculate symbol_id (consistent with other tables)
             symbol_id = abs(hash(symbol)) % 1000000000
             

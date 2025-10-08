@@ -178,7 +178,7 @@ s3://fin-trade-craft-landing/
 - **LISTING_STATUS**: Complete universe of tradable symbols with metadata
 - **TIME_SERIES_DAILY_ADJUSTED**: Historical daily adjusted price data
 - **BALANCE_SHEET**: 🆕 Comprehensive balance sheet fundamentals (annual/quarterly)
-- **INCREMENTAL_ETL_STATUS**: Processing status tracking for all ETL operations
+- **ETL_WATERMARKS**: Enhanced processing status tracking with fiscal date boundaries and delisting intelligence
 - **UNIVERSE_***: Managed symbol universes for different asset classes
 
 ## Balance Sheet Fundamentals Features 🆕
