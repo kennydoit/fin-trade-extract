@@ -158,27 +158,27 @@ SELECT col1, col2, col3, col4, col5, source_file
 FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
 LIMIT 5;
 
--- Remove bad rows
-DELETE FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING WHERE symbol IS NULL OR symbol = '';
+-- Remove bad rows (assuming symbol is in col2 based on typical CSV structure)
+DELETE FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING WHERE col2 IS NULL OR col2 = '';
 
--- Debug: Check for duplicate symbols across files
+-- Debug: Check for duplicate data across files (using col2 as identifier)
 SELECT 
-    symbol,
+    col2 as identifier,
     COUNT(*) as occurrence_count,
     COUNT(DISTINCT source_file) as file_count,
     LISTAGG(DISTINCT source_file, ', ') as files
 FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
-GROUP BY symbol
+GROUP BY col2
 HAVING COUNT(*) > 1
 ORDER BY occurrence_count DESC
 LIMIT 10;
 
--- Create deduplicated staging data
+-- Create deduplicated staging data (using col2 as identifier)
 DELETE FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
-WHERE (symbol, source_file) NOT IN (
-  SELECT symbol, MIN(source_file) 
+WHERE (col2, source_file) NOT IN (
+  SELECT col2, MIN(source_file) 
   FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
-  GROUP BY symbol
+  GROUP BY col2
 );
 
 -- Debug: Check staging data after deduplication
@@ -191,7 +191,5 @@ SELECT 'Staging data loaded - check the sample above to see column structure' as
 -- Verify results
 SELECT COUNT(*) AS total_overview_records FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
 
--- Sample records
-SELECT SYMBOL, NAME, SECTOR, FISCAL_YEAR_END, LATEST_QUARTER, LOAD_DATE, UPDATED_AT
-FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW 
-ORDER BY SYMBOL LIMIT 10;
+-- Sample records from main table (will be empty until proper mapping is implemented)
+SELECT COUNT(*) as main_table_records FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
