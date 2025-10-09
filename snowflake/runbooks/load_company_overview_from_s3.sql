@@ -135,6 +135,21 @@ SELECT
 FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
 LIMIT 3;
 
+-- Debug FiscalYearEnd specifically
+SELECT 'FiscalYearEnd debugging:' as MESSAGE;
+SELECT 
+    Symbol,
+    FiscalYearEnd,
+    LENGTH(FiscalYearEnd) as fiscal_year_end_length,
+    CASE 
+        WHEN FiscalYearEnd IS NULL THEN 'NULL'
+        WHEN FiscalYearEnd = '' THEN 'EMPTY STRING'
+        WHEN FiscalYearEnd = 'None' THEN 'NONE VALUE'
+        ELSE 'HAS VALUE'
+    END as fiscal_year_end_status
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
+LIMIT 8;
+
 -- Show processing metadata
 SELECT 'Processing metadata:' as MESSAGE;
 SELECT 
@@ -212,6 +227,21 @@ SELECT
     UPDATED_AT
 FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW
 LIMIT 5;
+
+-- Debug FISCAL_YEAR_END in main table
+SELECT 'Main table FISCAL_YEAR_END debugging:' as MESSAGE;
+SELECT 
+    SYMBOL,
+    FISCAL_YEAR_END,
+    LENGTH(FISCAL_YEAR_END) as fiscal_year_end_length,
+    CASE 
+        WHEN FISCAL_YEAR_END IS NULL THEN 'NULL'
+        WHEN FISCAL_YEAR_END = '' THEN 'EMPTY STRING'
+        WHEN FISCAL_YEAR_END = 'None' THEN 'NONE VALUE'
+        ELSE 'HAS VALUE'
+    END as fiscal_year_end_status
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW
+LIMIT 8;
 
 SELECT 'Debug staging table created successfully! Check the output above to understand the CSV structure.' as COMPLETION_MESSAGE;
 
