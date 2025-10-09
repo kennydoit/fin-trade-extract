@@ -480,6 +480,60 @@ class BalanceSheetExtractor:
         except (ValueError, TypeError):
             return None
 
+    def cleanup_s3_bucket(self):
+        """Delete all existing files in the S3 bucket before processing."""
+        logger.info("🧹 Cleaning up S3 bucket before extraction...")
+        
+        try:
+            total_deleted = 0
+            continuation_token = None
+            
+            while True:
+                # List objects (handles pagination for large numbers of files)
+                list_kwargs = {
+                    'Bucket': self.s3_bucket,
+                    'Prefix': self.s3_prefix
+                }
+                if continuation_token:
+                    list_kwargs['ContinuationToken'] = continuation_token
+                
+                response = self.s3_client.list_objects_v2(**list_kwargs)
+                
+                if 'Contents' not in response:
+                    if total_deleted == 0:
+                        logger.info("📂 S3 bucket is already empty")
+                    break
+                
+                # Get objects to delete (max 1000 per batch due to AWS limits)
+                objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+                
+                if objects_to_delete:
+                    logger.info(f"🗑️ Deleting batch of {len(objects_to_delete)} files from S3...")
+                    
+                    self.s3_client.delete_objects(
+                        Bucket=self.s3_bucket,
+                        Delete={'Objects': objects_to_delete}
+                    )
+                    
+                    total_deleted += len(objects_to_delete)
+                    logger.info(f"✅ Deleted {len(objects_to_delete)} files (total deleted: {total_deleted})")
+                
+                # Check if there are more objects to delete
+                if not response.get('IsTruncated', False):
+                    break
+                    
+                continuation_token = response.get('NextContinuationToken')
+            
+            if total_deleted > 0:
+                logger.info(f"✅ Successfully deleted {total_deleted} files from s3://{self.s3_bucket}/{self.s3_prefix}")
+            else:
+                logger.info("📂 No files found to delete")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Error cleaning S3 bucket: {e}")
+            # Don't fail the whole process due to cleanup issues
+            logger.info("🔄 Continuing with extraction despite cleanup error...")
+
     def upload_to_s3(self, symbol: str, df: pd.DataFrame) -> bool:
         """Upload balance sheet data to S3."""
         try:
@@ -567,6 +621,9 @@ class BalanceSheetExtractor:
         logger.info("🚀 Starting bulk balance sheet extraction...")
         
         try:
+            # Clean up S3 bucket first
+            self.cleanup_s3_bucket()
+            
             # Get symbols to process
             symbols = self.get_symbols_to_process()
             if not symbols:

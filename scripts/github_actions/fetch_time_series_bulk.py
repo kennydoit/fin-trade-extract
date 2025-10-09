@@ -280,6 +280,65 @@ def extract_fiscal_dates_from_csv(csv_data: str) -> tuple[Optional[str], Optiona
         return None, None
 
 
+def cleanup_s3_bucket(bucket: str, s3_prefix: str, region: str) -> int:
+    """Delete all existing files in the S3 bucket before processing."""
+    logger.info("🧹 Cleaning up S3 bucket before extraction...")
+    
+    try:
+        s3_client = boto3.client('s3', region_name=region)
+        total_deleted = 0
+        continuation_token = None
+        
+        while True:
+            # List objects (handles pagination for large numbers of files)
+            list_kwargs = {
+                'Bucket': bucket,
+                'Prefix': s3_prefix
+            }
+            if continuation_token:
+                list_kwargs['ContinuationToken'] = continuation_token
+            
+            response = s3_client.list_objects_v2(**list_kwargs)
+            
+            if 'Contents' not in response:
+                if total_deleted == 0:
+                    logger.info("📂 S3 bucket is already empty")
+                break
+            
+            # Get objects to delete (max 1000 per batch due to AWS limits)
+            objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+            
+            if objects_to_delete:
+                logger.info(f"🗑️ Deleting batch of {len(objects_to_delete)} files from S3...")
+                
+                s3_client.delete_objects(
+                    Bucket=bucket,
+                    Delete={'Objects': objects_to_delete}
+                )
+                
+                total_deleted += len(objects_to_delete)
+                logger.info(f"✅ Deleted {len(objects_to_delete)} files (total deleted: {total_deleted})")
+            
+            # Check if there are more objects to delete
+            if not response.get('IsTruncated', False):
+                break
+                
+            continuation_token = response.get('NextContinuationToken')
+        
+        if total_deleted > 0:
+            logger.info(f"✅ Successfully deleted {total_deleted} files from s3://{bucket}/{s3_prefix}")
+        else:
+            logger.info("📂 No files found to delete")
+            
+        return total_deleted
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Error cleaning S3 bucket: {e}")
+        # Don't fail the whole process due to cleanup issues
+        logger.info("🔄 Continuing with extraction despite cleanup error...")
+        return 0
+
+
 def upload_to_s3(csv_data: str, symbol: str, load_date: str, bucket: str, 
                 s3_prefix: str, region: str) -> bool:
     """Upload CSV data to S3."""
@@ -596,14 +655,21 @@ def main():
     if max_symbols:
         logger.info(f"🔒 Symbol limit: {max_symbols} symbols")
     
-    # Step 1: Get symbols using incremental ETL management
+    # Step 1: Clean up S3 bucket before processing
+    s3_bucket = os.environ['S3_BUCKET']
+    s3_prefix = os.environ.get('S3_TIME_SERIES_PREFIX', 'time_series/')
+    aws_region = os.environ.get('AWS_REGION', 'us-east-1')
+    
+    cleanup_s3_bucket(s3_bucket, s3_prefix, aws_region)
+    
+    # Step 2: Get symbols using incremental ETL management
     symbols = get_symbols_to_process(processing_mode, universe_name, max_symbols)
     
     if not symbols:
         logger.error("❌ No symbols found to process")
         sys.exit(1)
     
-    # Step 2: Process symbols with safety controls
+    # Step 3: Process symbols with safety controls
     results = process_symbols_in_batches(symbols, api_key, batch_size, max_batches, failure_threshold)
     
     # Step 3: Final summary
