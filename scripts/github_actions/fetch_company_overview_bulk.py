@@ -67,6 +67,17 @@ class CompanyOverviewExtractor:
         self.universe_name = os.getenv('UNIVERSE_NAME', 'active_common_stocks')
         self.exchange_filter = os.getenv('EXCHANGE_FILTER', 'ALL')  # Will be filtered to major exchanges
         
+        # COST PROTECTION: Default to small limits for safety
+        cost_protection_mode = os.getenv('COST_PROTECTION', 'ON')
+        if cost_protection_mode == 'ON' and not os.getenv('MAX_SYMBOLS'):
+            logger.warning("🛡️ COST PROTECTION ACTIVE: Limiting to 10 symbols max")
+            logger.warning("🛡️ Set MAX_SYMBOLS explicitly or COST_PROTECTION=OFF to override")
+            self.max_symbols = 10
+        elif cost_protection_mode == 'ON' and int(os.getenv('MAX_SYMBOLS', '0')) > 50:
+            logger.warning("🛡️ COST PROTECTION: MAX_SYMBOLS > 50 detected, limiting to 50")
+            logger.warning("🛡️ Set COST_PROTECTION=OFF to process more than 50 symbols")
+            self.max_symbols = 50
+        
         # Fixed filters for overview - only active common stocks
         self.asset_type_filter = 'Stock'  # Force to Stock only, no ETFs
         self.status_filter = 'Active'     # Force to Active only, no delisted
@@ -269,9 +280,19 @@ class CompanyOverviewExtractor:
             processed_data['PROCESSED_DATE'] = datetime.now(timezone.utc).strftime('%Y-%m-%d')
             processed_data['LOAD_DATE'] = self.load_date
             
-            # Ensure key fiscal fields are included (should already be in API response)
+            # Clean up date fields that may have invalid values
             fiscal_year_end = processed_data.get('FiscalYearEnd', '')
             latest_quarter = processed_data.get('LatestQuarter', '')
+            
+            # Clean up LatestQuarter field - handle various invalid formats
+            if latest_quarter:
+                latest_quarter = self._clean_date_field(latest_quarter, 'LatestQuarter', symbol)
+                processed_data['LatestQuarter'] = latest_quarter
+            
+            # Clean up FiscalYearEnd field if needed
+            if fiscal_year_end:
+                fiscal_year_end = self._clean_date_field(fiscal_year_end, 'FiscalYearEnd', symbol)
+                processed_data['FiscalYearEnd'] = fiscal_year_end
             
             logger.debug(f"📊 Processing {symbol}: FiscalYearEnd='{fiscal_year_end}', LatestQuarter='{latest_quarter}'")
             
@@ -283,6 +304,51 @@ class CompanyOverviewExtractor:
         except Exception as e:
             logger.error(f"❌ Error processing overview data for {symbol}: {e}")
             return None
+
+    def _clean_date_field(self, date_value: str, field_name: str, symbol: str) -> str:
+        """Clean and validate date field values from Alpha Vantage API."""
+        if not date_value or date_value == 'None':
+            return ''
+        
+        # Handle numeric-only values that aren't valid dates
+        if date_value.isdigit() and len(date_value) < 6:
+            logger.warning(f"Could not parse date string '{date_value}' for symbol {symbol}: appears to be invalid numeric value")
+            return ''
+        
+        # Handle timestamp format like '20251008_162440' - extract just the date part
+        if '_' in date_value and len(date_value) >= 8:
+            date_part = date_value.split('_')[0]
+            if len(date_part) == 8 and date_part.isdigit():
+                try:
+                    # Convert YYYYMMDD to YYYY-MM-DD
+                    formatted_date = f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]}"
+                    # Validate it's a real date
+                    datetime.strptime(formatted_date, '%Y-%m-%d')
+                    logger.warning(f"Could not parse date string '{date_value}' for symbol {symbol}: converted timestamp to date '{formatted_date}'")
+                    return formatted_date
+                except ValueError:
+                    logger.warning(f"Could not parse date string '{date_value}' for symbol {symbol}: invalid timestamp format")
+                    return ''
+        
+        # Handle various other formats and validate
+        try:
+            # Try parsing as YYYY-MM-DD first
+            if len(date_value) == 10 and date_value.count('-') == 2:
+                datetime.strptime(date_value, '%Y-%m-%d')
+                return date_value
+            
+            # Try parsing as MM-DD format (fiscal year end)
+            if len(date_value) == 5 and date_value.count('-') == 1:
+                # This is probably a MM-DD format for fiscal year end, leave as-is
+                return date_value
+            
+            # For other formats, try to parse and reformat
+            parsed_date = datetime.strptime(date_value, '%Y-%m-%d')
+            return parsed_date.strftime('%Y-%m-%d')
+            
+        except ValueError:
+            logger.warning(f"Could not parse date string '{date_value}' for symbol {symbol}: time data '{date_value}' does not match format '%Y-%m-%d'")
+            return ''
 
     def upload_to_s3(self, df: pd.DataFrame, symbol: str) -> bool:
         """Upload processed overview data to S3."""
@@ -395,28 +461,47 @@ class CompanyOverviewExtractor:
         logger.info("🧹 Cleaning up S3 bucket before extraction...")
         
         try:
-            # List all objects in the company overview prefix
-            response = self.s3_client.list_objects_v2(
-                Bucket=self.s3_bucket,
-                Prefix=self.s3_prefix
-            )
+            total_deleted = 0
+            continuation_token = None
             
-            if 'Contents' not in response:
-                logger.info("📂 S3 bucket is already empty")
-                return
-            
-            # Delete all objects
-            objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
-            
-            if objects_to_delete:
-                logger.info(f"🗑️ Deleting {len(objects_to_delete)} existing files from S3...")
+            while True:
+                # List objects (handles pagination for large numbers of files)
+                list_kwargs = {
+                    'Bucket': self.s3_bucket,
+                    'Prefix': self.s3_prefix
+                }
+                if continuation_token:
+                    list_kwargs['ContinuationToken'] = continuation_token
                 
-                self.s3_client.delete_objects(
-                    Bucket=self.s3_bucket,
-                    Delete={'Objects': objects_to_delete}
-                )
+                response = self.s3_client.list_objects_v2(**list_kwargs)
                 
-                logger.info(f"✅ Successfully deleted {len(objects_to_delete)} files from s3://{self.s3_bucket}/{self.s3_prefix}")
+                if 'Contents' not in response:
+                    if total_deleted == 0:
+                        logger.info("📂 S3 bucket is already empty")
+                    break
+                
+                # Get objects to delete (max 1000 per batch due to AWS limits)
+                objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+                
+                if objects_to_delete:
+                    logger.info(f"🗑️ Deleting batch of {len(objects_to_delete)} files from S3...")
+                    
+                    self.s3_client.delete_objects(
+                        Bucket=self.s3_bucket,
+                        Delete={'Objects': objects_to_delete}
+                    )
+                    
+                    total_deleted += len(objects_to_delete)
+                    logger.info(f"✅ Deleted {len(objects_to_delete)} files (total deleted: {total_deleted})")
+                
+                # Check if there are more objects to delete
+                if not response.get('IsTruncated', False):
+                    break
+                    
+                continuation_token = response.get('NextContinuationToken')
+            
+            if total_deleted > 0:
+                logger.info(f"✅ Successfully deleted {total_deleted} files from s3://{self.s3_bucket}/{self.s3_prefix}")
             else:
                 logger.info("📂 No files found to delete")
                 

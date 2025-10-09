@@ -30,15 +30,17 @@ on:
       batch_size:
         description: 'Number of symbols to process per batch'
         required: false
-        default: '50'
+        default: '25'
         type: string
       max_batches:
         description: 'Maximum number of batches to process (for testing)'
         required: false
+        default: '5'
         type: string
       max_symbols:
         description: 'Maximum number of symbols to process (for testing)'
         required: false
+        default: '100'
         type: string
       failure_threshold:
         description: 'Failure threshold between 0.0 and 1.0'
@@ -121,7 +123,8 @@ jobs:
           MAX_BATCHES: ${{ inputs.max_batches }}
           MAX_SYMBOLS: ${{ inputs.max_symbols }}
           FAILURE_THRESHOLD: ${{ inputs.failure_threshold || '0.5' }}
-          LOAD_DATE: ${{ github.run_number }}${{ github.run_attempt }}
+          LOAD_DATE: ${{ github.event.inputs.load_date || '' }}
+          COST_PROTECTION: ON
         run: |
           echo "🏢 Starting incremental company overview ETL extraction..."
           echo "🎯 Target: Active common stocks only (no ETFs, no delisted)"
@@ -153,6 +156,52 @@ jobs:
         run: |
           echo "🗄️ Loading bulk company overview data into Snowflake..."
           python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_company_overview_from_s3.sql
+
+      - name: Validate data loaded successfully
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+        run: |
+          echo "🔍 Validating data was loaded into Snowflake..."
+          python -c "
+          import snowflake.connector
+          import os
+          
+          conn = snowflake.connector.connect(
+              user=os.environ['SNOWFLAKE_USER'],
+              password=os.environ['SNOWFLAKE_PASSWORD'], 
+              account=os.environ['SNOWFLAKE_ACCOUNT'],
+              warehouse=os.environ['SNOWFLAKE_WAREHOUSE'],
+              database=os.environ['SNOWFLAKE_DATABASE'],
+              schema=os.environ['SNOWFLAKE_SCHEMA']
+          )
+          
+          cursor = conn.cursor()
+          
+          # Check staging table
+          cursor.execute('SELECT COUNT(*) FROM COMPANY_OVERVIEW_STAGING')
+          staging_count = cursor.fetchone()[0]
+          print(f'📊 Staging table rows: {staging_count}')
+          
+          # Check main table  
+          cursor.execute('SELECT COUNT(*) FROM COMPANY_OVERVIEW')
+          main_count = cursor.fetchone()[0]
+          print(f'📊 Main table rows: {main_count}')
+          
+          if staging_count == 0 and main_count == 0:
+              print('❌ CRITICAL: No data loaded into either table!')
+              print('🚨 All extraction work was wasted - SQL loading failed!')
+              exit(1)
+          else:
+              print(f'✅ SUCCESS: Data loaded successfully')
+              print(f'📈 Total records processed: {main_count}')
+          
+          conn.close()
+          "
 
       - name: Upload processing results
         if: always()

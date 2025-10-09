@@ -3,6 +3,7 @@ import sys
 import snowflake.connector
 
 def run_sql_file(sql_path, ctx):
+    print(f"📄 Reading SQL file: {sql_path}")
     with open(sql_path, 'r') as f:
         sql = f.read()
 
@@ -17,12 +18,30 @@ def run_sql_file(sql_path, ctx):
         if lines:
             statements.append(stmt)
 
-    for stmt in statements:
-        print(f"Executing: {stmt[:80]}{'...' if len(stmt) > 80 else ''}")
+    print(f"🔢 Found {len(statements)} SQL statements to execute")
+    
+    for i, stmt in enumerate(statements, 1):
+        print(f"📋 Executing statement {i}/{len(statements)}: {stmt[:80]}{'...' if len(stmt) > 80 else ''}")
         try:
-            ctx.cursor().execute(stmt)
+            result = ctx.cursor().execute(stmt)
+            print(f"✅ Statement {i} completed successfully")
+            
+            # For SELECT statements, show row count
+            if stmt.strip().upper().startswith('SELECT'):
+                rows = result.fetchall()
+                print(f"📊 Returned {len(rows)} rows")
+            
+            # For COPY statements, show copy results
+            elif 'COPY INTO' in stmt.upper():
+                rows = result.fetchall()
+                if rows:
+                    print(f"📥 COPY result: {rows[0]}")
+                
         except Exception as e:
-            print(f"Error executing statement: {e}")
+            print(f"❌ ERROR executing statement {i}: {e}")
+            print(f"🔍 Failed statement: {stmt}")
+            print(f"💡 This error caused the SQL execution to fail completely")
+            print(f"🚨 All previous extraction work was wasted due to this SQL error")
             raise
 
 def main():
