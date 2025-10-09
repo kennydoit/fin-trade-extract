@@ -164,41 +164,93 @@ FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
 
 -- NO DELETE STATEMENTS - KEEP ALL DATA FOR DEBUGGING
 
--- Transfer data from staging to main table with only essential fields (cost optimized)
-INSERT INTO FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW (
-  SYMBOL_ID, SYMBOL, ASSET_TYPE, NAME, DESCRIPTION, CIK, EXCHANGE, CURRENCY, COUNTRY,
-  SECTOR, INDUSTRY, ADDRESS, OFFICIAL_SITE, FISCAL_YEAR_END, LATEST_QUARTER, 
-  PROCESSED_DATE, LOAD_DATE, UPDATED_AT
-)
-SELECT 
-  TRY_TO_NUMBER(SYMBOL_ID) as SYMBOL_ID,
-  Symbol,
-  AssetType as ASSET_TYPE,
-  Name,
-  Description,
-  CIK,
-  Exchange,
-  Currency,
-  Country,
-  Sector,
-  Industry,
-  Address,
-  OfficialSite as OFFICIAL_SITE,
-  FiscalYearEnd as FISCAL_YEAR_END,
-  TRY_TO_DATE(LatestQuarter, 'YYYY-MM-DD') as LATEST_QUARTER,
-  TRY_TO_DATE(PROCESSED_DATE, 'YYYY-MM-DD') as PROCESSED_DATE,
-  TO_VARCHAR(CURRENT_DATE(), 'YYYYMMDD') as LOAD_DATE,  -- Generate from current date
-  CURRENT_TIMESTAMP() as UPDATED_AT
-FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING
-WHERE Symbol IS NOT NULL AND Symbol != '' AND Symbol != 'Symbol';
+-- Transfer data from staging to main table using MERGE (upsert) to prevent duplicates
+MERGE INTO FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW AS target
+USING (
+  SELECT 
+    TRY_TO_NUMBER(SYMBOL_ID) as SYMBOL_ID,
+    Symbol,
+    AssetType as ASSET_TYPE,
+    Name,
+    Description,
+    CIK,
+    Exchange,
+    Currency,
+    Country,
+    Sector,
+    Industry,
+    Address,
+    OfficialSite as OFFICIAL_SITE,
+    FiscalYearEnd as FISCAL_YEAR_END,
+    TRY_TO_DATE(LatestQuarter, 'YYYY-MM-DD') as LATEST_QUARTER,
+    TRY_TO_DATE(PROCESSED_DATE, 'YYYY-MM-DD') as PROCESSED_DATE,
+    TO_VARCHAR(CURRENT_DATE(), 'YYYYMMDD') as LOAD_DATE,
+    CURRENT_TIMESTAMP() as UPDATED_AT
+  FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING
+  WHERE Symbol IS NOT NULL AND Symbol != '' AND Symbol != 'Symbol'
+) AS source ON target.SYMBOL = source.Symbol
+
+WHEN MATCHED THEN
+  UPDATE SET
+    SYMBOL_ID = source.SYMBOL_ID,
+    ASSET_TYPE = source.ASSET_TYPE,
+    NAME = source.Name,
+    DESCRIPTION = source.Description,
+    CIK = source.CIK,
+    EXCHANGE = source.Exchange,
+    CURRENCY = source.Currency,
+    COUNTRY = source.Country,
+    SECTOR = source.Sector,
+    INDUSTRY = source.Industry,
+    ADDRESS = source.Address,
+    OFFICIAL_SITE = source.OFFICIAL_SITE,
+    FISCAL_YEAR_END = source.FISCAL_YEAR_END,
+    LATEST_QUARTER = source.LATEST_QUARTER,
+    PROCESSED_DATE = source.PROCESSED_DATE,
+    LOAD_DATE = source.LOAD_DATE,
+    UPDATED_AT = source.UPDATED_AT
+
+WHEN NOT MATCHED THEN
+  INSERT (
+    SYMBOL_ID, SYMBOL, ASSET_TYPE, NAME, DESCRIPTION, CIK, EXCHANGE, CURRENCY, COUNTRY,
+    SECTOR, INDUSTRY, ADDRESS, OFFICIAL_SITE, FISCAL_YEAR_END, LATEST_QUARTER, 
+    PROCESSED_DATE, LOAD_DATE, UPDATED_AT
+  )
+  VALUES (
+    source.SYMBOL_ID, source.Symbol, source.ASSET_TYPE, source.Name, source.Description,
+    source.CIK, source.Exchange, source.Currency, source.Country, source.Sector,
+    source.Industry, source.Address, source.OFFICIAL_SITE, source.FISCAL_YEAR_END,
+    source.LATEST_QUARTER, source.PROCESSED_DATE, source.LOAD_DATE, source.UPDATED_AT
+  );
 
 -- Show final results
-SELECT 'Data transfer completed!' as MESSAGE;
+SELECT 'Data transfer completed with MERGE (upsert)!' as MESSAGE;
 
 SELECT 
     'Records in staging table:' as METRIC,
     COUNT(*) as VALUE
 FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
+
+-- Check for duplicates in main table (should be 0)
+SELECT 'Duplicate check in main table:' as MESSAGE;
+SELECT 
+    'Total records' as CHECK_TYPE,
+    COUNT(*) as COUNT
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW
+
+UNION ALL
+
+SELECT 
+    'Unique symbols' as CHECK_TYPE,
+    COUNT(DISTINCT SYMBOL) as COUNT
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW
+
+UNION ALL
+
+SELECT 
+    'Duplicate symbols (should be 0)' as CHECK_TYPE,
+    COUNT(*) - COUNT(DISTINCT SYMBOL) as COUNT
+FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
 
 SELECT 
     'Records in main COMPANY_OVERVIEW table:' as METRIC,
