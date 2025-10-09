@@ -146,6 +146,16 @@ class CompanyOverviewExtractor:
                 )
                 
                 logger.info(f"📊 Incremental processing: {len(symbols_to_process)} symbols need overview data")
+                logger.info(f"🔍 First 10 symbols to process: {symbols_to_process[:10]}")
+                
+                # Debug: Check if these symbols have recent watermark entries
+                try:
+                    recent_watermarks = etl_manager.get_last_update_timestamps('company_overview', symbols_to_process[:10])
+                    for symbol in symbols_to_process[:5]:
+                        last_update = recent_watermarks.get(symbol, 'Never processed')
+                        logger.info(f"🔍 {symbol} last update: {last_update}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not check watermark status: {e}")
                 
             elif self.processing_mode == 'full_refresh':
                 # Get all active common stock symbols regardless of processing status
