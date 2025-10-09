@@ -10,26 +10,84 @@ The listing_status table is the seed table that builds the watermarking table.
 Here's how it will work.
 
 1. Build initial watermarking table:
+   - Table to be called FIN_TRADE_EXTRACT.RAW.ETL_WATERMARK
    - Create a separate workflow that creates the watermarkig table from listing_status. 
    - Create calculated SYMBOL_ID
    - FIRST_FISCAL_DATE and LAST_FISCAL_DATE are null
    - TABLE_NAME = 'WATERMARK'
+   - API_ELIGIBLE = 'NO'
    - Primary Keys: SYMBOL_ID, TABLE_NAME --> no duplicates allowed. Upsert only
    - There should be approximately 20k records including listed and delisted stocks
 
-2. Build watermarks for each data source. 
+3. Build watermarks for each data source. 
    Since the watermarking table will drive the ETL process, there needs to be watermarking
-   records for each source
-Running any ALPHA VANTAGE extraction for the first time.
-   For example, let's say we are running TIME_SERIES_DAILY_ADJUSTED for the first time
-   Step 1: Add the 20k records with table_name 'WATERMARK' 
-   Step 2: Change 'WATERMARK' to 'TIME_SERIES_DAILY_ADJUSTED' for the new records
-   Step 3: Eliminate out of scope records. This would apply to fundamentals. 
-           For fundamentals, we would delete any row that was an ETF or delisted stock
-   The resulting table would have eligible symbols
-   We now have a watermark table that con feed into the 
+   records for each source.
 
+   A. Build watermarking entries for TIME_SERIES_DAILY_ADJUSTED
+      Step 1: Copy the 20k records with table_name 'WATERMARK' 
+      Step 2: Change 'WATERMARK' to 'TIME_SERIES_DAILY_ADJUSTED' for the new records
+      Step 3: Change API_ELIGIBLE to 'YES'
+      We now have a watermark table that can feed into the TIME_SERIES_DAILY_ADJUSTED ETL
+      The Incremental ETL process can only attempt to process records where API_ELIGIBLE = 'YES'
+   B. Build watermarking entries for COMPANY_OVERVIEW
+      Step 1: Copy the 20k records with table_name 'WATERMARK'
+      Step 2: Change 'WATERMARK' to 'COMPANY_OVERVIEW' for the new records
+      Step 3: Change API_ELIGIBLE to 'YES'
+      Step 4: if ASSET_TYPE is not for a common stock, then set API_ELIGIBLE to 'NO'
+   C. Build watermarking entries for CASH_FLOW
+      Step 1: Copy the 20k records with table_name 'WATERMARK' 
+      Step 2: Change 'WATERMARK' to 'CASH_FLOW' for the new records
+      Step 3: Change API_ELIGIBLE to 'YES'
+      Step 4: if ASSET_TYPE is not for a common stock, then set API_ELIGIBLE to 'NO'
+      Step 5: If stock is not Active, then set API_ELIGIBLE to 'NO'
+   D. Build watermarking entries for BALANCE_SHEET
+      Step 1: Copy the 20k records with table_name 'WATERMARK' 
+      Step 2: Change 'WATERMARK' to 'BALANCE_SHEET' for the new records
+      Step 3: Change API_ELIGIBLE to 'YES'
+      Step 4: if ASSET_TYPE is not for a common stock, then set API_ELIGIBLE to 'NO'
+      Step 5: If stock is not Active, then set API_ELIGIBLE to 'NO'
+   D. Build watermarking entries for INCOME_STATEMENT
+      Step 1: Copy the 20k records with table_name 'WATERMARK' 
+      Step 2: Change 'WATERMARK' to 'BALANCE_SHEET' for the new records
+      Step 3: Change API_ELIGIBLE to 'YES'
+      Step 4: if ASSET_TYPE is not for a common stock, then set API_ELIGIBLE to 'NO'
+      Step 5: If stock is not Active, then set API_ELIGIBLE to 'NO'
+   E. Build watermarking entries for INSIDER_TRANSACTIONS
+      Step 1: Copy the 20k records with table_name 'WATERMARK' 
+      Step 2: Change 'WATERMARK' to 'INSIDER_TRANSACTIONS' for the new records
+      Step 3: Change API_ELIGIBLE to 'YES'
+      Step 4: if ASSET_TYPE is not for a common stock, then set API_ELIGIBLE to 'NO'
+      Step 5: If stock is not Active, then set API_ELIGIBLE to 'NO'
+   E. Build watermarking entries for EARNINGS_CALL_TRANSCRIPT
+      Step 1: Copy the 20k records with table_name 'WATERMARK' 
+      Step 2: Change 'WATERMARK' to 'EARNINGS_CALL_TRANSCRIPT' for the new records
+      Step 3: Change API_ELIGIBLE to 'YES'
+      Step 4: if ASSET_TYPE is not for a common stock, then set API_ELIGIBLE to 'NO'
+      Step 5: If stock is not Active, then set API_ELIGIBLE to 'NO'
+   
+Once watermarking table is created for all symbol-driven API calls, we can run first ETL:
+Here is how the first ETL will work:
+   A. First ETL: TIME_SERIES_DAILY_ADJUSTED
+      Step 1: There will be 3 ETLs for Time Series Daily Adjusted.
+              1. NYSE
+              2. NASDAQ
+              3. ETF
+      Step 1: Create listing of SYMBOLS to pull that can be used for batch processing. 
+              Ignore records where API_ELIGIBLE = 'NO'
+              Include Active and Inactive Symbols
+      Step 2: Run API extractions for all remaining symbols
+      Step 3: Load all data into Snowflake
+      Step 4: Once data are loaded, update ETL_WATERMARK table. 
+              Step 4 must be an independent function that can be called any time to update ETL_WATERMARK.
+              This is important in case the process fails or if we want to retro-activley update ETL_WATERMARK 
+              Update ETL_WATERMARK values:
+                  FIRST_FISCAL_DATE - minimum value of date field
+                  LAST_FISCAL_DATE - maximum value of date field
+                  LAST_SUCCESSFUL_RUN - current date-time stamp
+                  CREATED_AT - current date-time stamp for initial load 
+                  UPDATED_AT - current date-time stamp
 
+    
 
 # WATERMARKING TABLE COLUMNS:
 
@@ -42,6 +100,7 @@ SYMBOL                      VARCHAR(20) NOT NULL,      -- Actual symbol for debu
 EXCHANGE                    VARCHAR(64)                -- From listing_status
 ASSET_TYPE                  VARCHAR(64)                -- From listing_status
 STATUS                      VARCHAR(12)                -- From listing_status
+API_ELIGIBLE                VARCHAR(3)                 -- can be 'YES' or 'NO'
 
 -- Listing Information  
 IPO_DATE                    DATE,                      -- IPO date from listing status
