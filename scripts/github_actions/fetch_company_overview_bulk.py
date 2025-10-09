@@ -89,7 +89,9 @@ class CompanyOverviewExtractor:
         self.failure_threshold = float(os.getenv('FAILURE_THRESHOLD', '0.5'))
         
         # Rate limiting (overview calls are less frequent than time series)
-        self.api_delay = 0.8  # 75 calls/minute = 0.8s between calls
+        # Configurable delay - can be overridden via environment variable
+        default_delay = 0.3  # Optimized for faster processing
+        self.api_delay = float(os.getenv('API_DELAY_SECONDS', str(default_delay)))
         self.retry_delay = 5.0
         self.max_retries = 3
         
@@ -115,6 +117,7 @@ class CompanyOverviewExtractor:
         logger.info(f"Asset type filter: {self.asset_type_filter} (FIXED - no ETFs)")
         logger.info(f"Status filter: {self.status_filter} (FIXED - no delisted)")
         logger.info(f"Batch size: {self.batch_size}")
+        logger.info(f"API delay: {self.api_delay}s ({60/self.api_delay:.1f} calls/minute max)")
         
         if not self.api_key:
             raise ValueError("ALPHAVANTAGE_API_KEY environment variable is required")

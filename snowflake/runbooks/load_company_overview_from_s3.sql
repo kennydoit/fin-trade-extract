@@ -11,12 +11,9 @@ CREATE STAGE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGE
   URL='s3://fin-trade-craft-landing/company_overview/'
   STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION;
 
--- 2) DROP existing table and create fresh optimized COMPANY_OVERVIEW table 
--- This removes the old 40+ column structure with expensive financial metrics
-DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
-
--- Create main COMPANY_OVERVIEW table with only essential fields for cost optimization
-CREATE TABLE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW (
+-- 2) Create main COMPANY_OVERVIEW table with only essential fields for cost optimization
+-- NOTE: Table should be manually dropped/recreated if schema changes are needed
+CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW (
   SYMBOL_ID NUMBER(38,0),
   SYMBOL VARCHAR(20),
   ASSET_TYPE VARCHAR(50),
@@ -37,12 +34,9 @@ CREATE TABLE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW (
   UPDATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
 );
 
--- 3) Drop and recreate staging table to match exact Alpha Vantage API field names
+-- 3) Create staging table to match exact Alpha Vantage API field names
+-- NOTE: Staging table will be recreated each run for fresh data loading
 DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
-
--- Also clean up any stale data in main table that might have wrong LOAD_DATE values
-DELETE FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW 
-WHERE LOAD_DATE IN ('621', '631') OR LOAD_DATE IS NULL OR LENGTH(LOAD_DATE) < 10;
 
 CREATE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING (
   -- Essential Alpha Vantage API field names only (cost optimized)

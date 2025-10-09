@@ -31,11 +31,13 @@ logger = logging.getLogger(__name__)
 
 
 class AlphaVantageRateLimiter:
-    """Rate limiter for Alpha Vantage Premium API (75 calls/minute)."""
+    """Rate limiter for Alpha Vantage Premium API with configurable delays."""
     
     def __init__(self, calls_per_minute: int = 75):
         self.calls_per_minute = calls_per_minute
-        self.min_delay = 60.0 / calls_per_minute  # seconds between calls
+        # Allow override via environment variable for optimization
+        default_delay = 60.0 / calls_per_minute
+        self.min_delay = float(os.getenv('API_DELAY_SECONDS', str(default_delay)))
         self.last_call_time = 0.0
         
     def wait_if_needed(self):
