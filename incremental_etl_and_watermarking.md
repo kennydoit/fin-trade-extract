@@ -75,6 +75,19 @@ Here is how the first ETL will work:
       Step 1: Create listing of SYMBOLS to pull that can be used for batch processing. 
               Ignore records where API_ELIGIBLE = 'NO'
               Include Active and Inactive Symbols
+
+              Important: This is a bootstrapped process that applies to all symbols regardless of 
+              whether they have data or not.
+
+              Here is the logic:
+                  If FIRST_FISCAL_DATE is null and LAST_FISCAL_DATE is null 
+                     and API_ELIGIBLE = 'YES' then run extraction using the full history (not compact)
+
+                  If FIRST_FISCAL_DATE is not null and LAST_FISCAL_DATE is not null
+                     and API_ELIGIBLE = 'YES' then do this:
+                         a. if current date - LAST_FISCAL_DATE < STALENESS (5 DAYS, SHOULD BE PARAMETERIZED IN THE WORKFLOW)
+                            then use the COMPACT argument on the API call and pull only the latest 100 days
+                         b. otherwise pull the full history.
       Step 2: Run API extractions for all remaining symbols
       Step 3: Load all data into Snowflake
       Step 4: Once data are loaded, update ETL_WATERMARK table. 
