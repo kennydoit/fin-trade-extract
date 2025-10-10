@@ -1,0 +1,121 @@
+name: Create ETL Watermarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      table_name:
+        description: 'Table name to initialize watermarks for'
+        required: true
+        type: choice
+        options:
+          - TIME_SERIES_DAILY_ADJUSTED
+          - COMPANY_OVERVIEW
+          - LISTING_STATUS
+          - BALANCE_SHEET
+        default: 'TIME_SERIES_DAILY_ADJUSTED'
+      create_table_only:
+        description: 'Only create the watermarks table (do not initialize data)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  create-watermarks:
+    runs-on: ubuntu-latest
+    
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+      SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install snowflake-connector-python
+
+      - name: Create ETL Watermarks
+        run: |
+          echo "🚀 Creating ETL watermarks for table: ${{ github.event.inputs.table_name }}"
+          echo "📅 Timestamp: $(date)"
+          echo "🔧 Create table only: ${{ github.event.inputs.create_table_only }}"
+          
+          if [ "${{ github.event.inputs.create_table_only }}" = "true" ]; then
+            python scripts/watermarking/create_watermarks.py \
+              --table-name "${{ github.event.inputs.table_name }}" \
+              --create-table-only
+          else
+            python scripts/watermarking/create_watermarks.py \
+              --table-name "${{ github.event.inputs.table_name }}"
+          fi
+
+      - name: Generate Watermark Report
+        run: |
+          echo "📊 Generating watermark report..."
+          python -c "
+          import snowflake.connector
+          import os
+          
+          config = {
+              'account': os.getenv('SNOWFLAKE_ACCOUNT'),
+              'user': os.getenv('SNOWFLAKE_USER'),
+              'password': os.getenv('SNOWFLAKE_PASSWORD'),
+              'database': os.getenv('SNOWFLAKE_DATABASE'),
+              'schema': os.getenv('SNOWFLAKE_SCHEMA'),
+              'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE')
+          }
+          
+          conn = snowflake.connector.connect(**config)
+          cursor = conn.cursor()
+          
+          # Get watermark summary
+          cursor.execute('''
+              SELECT 
+                  DATA_TYPE,
+                  PROCESSING_STATUS,
+                  COUNT(*) as COUNT
+              FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+              GROUP BY DATA_TYPE, PROCESSING_STATUS
+              ORDER BY DATA_TYPE, PROCESSING_STATUS
+          ''')
+          
+          results = cursor.fetchall()
+          
+          print('📋 Current ETL Watermarks Summary:')
+          print('=' * 50)
+          for row in results:
+              print(f'{row[0]} | {row[1]} | {row[2]} records')
+          
+          cursor.close()
+          conn.close()
+          "
+
+      - name: Save Results
+        run: |
+          echo "💾 Saving watermarking results..."
+          cat > watermark_results.json << EOF
+          {
+            "table_name": "${{ github.event.inputs.table_name }}",
+            "create_table_only": "${{ github.event.inputs.create_table_only }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "status": "completed"
+          }
+          EOF
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: watermark-results-${{ github.event.inputs.table_name }}-${{ github.run_number }}
+          path: watermark_results.json
+          retention-days: 30
