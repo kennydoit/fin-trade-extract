@@ -3,14 +3,18 @@ name: Add Data Source Watermarks
 on:
   workflow_dispatch:
     inputs:
-      data_sources:
-        description: 'Data sources to create watermarks for'
+      data_source:
+        description: 'Data source to create watermarks for'
         required: true
         type: choice
         options:
           - TIME_SERIES_DAILY_ADJUSTED
           - COMPANY_OVERVIEW
           - BALANCE_SHEET
+          - CASH_FLOW
+          - INCOME_STATEMENT
+          - INSIDER_TRANSACTIONS
+          - EARNINGS_CALL_TRANSCRIPT
           - ALL_SOURCES
         default: 'TIME_SERIES_DAILY_ADJUSTED'
 
@@ -44,10 +48,10 @@ jobs:
         run: |
           echo "🚀 Creating data source watermarks"
           echo "📅 Timestamp: $(date)"
-          echo "📊 Data sources: ${{ github.event.inputs.data_sources }}"
-          echo "📄 Using: snowflake/setup/create_data_source_watermarks.sql"
+          echo "📊 Data source: ${{ github.event.inputs.data_source }}"
           
-          python scripts/watermarking/create_data_source_watermarks.py
+          python scripts/watermarking/create_individual_watermarks.py \
+            --data-source "${{ github.event.inputs.data_source }}"
 
       - name: Generate Summary Report
         run: |
@@ -126,7 +130,7 @@ jobs:
           echo "💾 Saving results..."
           cat > watermark_results.json << EOF
           {
-            "data_sources": "${{ github.event.inputs.data_sources }}",
+            "data_source": "${{ github.event.inputs.data_source }}",
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "status": "completed"
           }
@@ -135,6 +139,6 @@ jobs:
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
-          name: data-source-watermarks-${{ github.run_number }}
+          name: data-source-watermarks-${{ github.event.inputs.data_source }}-${{ github.run_number }}
           path: watermark_results.json
           retention-days: 30
