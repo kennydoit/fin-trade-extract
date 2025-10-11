@@ -73,9 +73,9 @@ jobs:
               SELECT 
                   TABLE_NAME,
                   COUNT(*) as TOTAL_SYMBOLS,
-                  COUNT(CASE WHEN API_ELIGIBLE = \"YES\" THEN 1 END) as API_ELIGIBLE,
-                  COUNT(CASE WHEN API_ELIGIBLE = \"NO\" THEN 1 END) as NOT_ELIGIBLE,
-                  ROUND(COUNT(CASE WHEN API_ELIGIBLE = \"YES\" THEN 1 END) * 100.0 / COUNT(*), 2) as ELIGIBLE_PCT
+                  COUNT(CASE WHEN API_ELIGIBLE = 'YES' THEN 1 END) as API_ELIGIBLE,
+                  COUNT(CASE WHEN API_ELIGIBLE = 'NO' THEN 1 END) as NOT_ELIGIBLE,
+                  ROUND(COUNT(CASE WHEN API_ELIGIBLE = 'YES' THEN 1 END) * 100.0 / COUNT(*), 2) as ELIGIBLE_PCT
               FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
               GROUP BY TABLE_NAME
               ORDER BY TABLE_NAME
@@ -99,8 +99,8 @@ jobs:
                   ASSET_TYPE,
                   COUNT(*) as SYMBOL_COUNT
               FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-              WHERE TABLE_NAME = \"TIME_SERIES_DAILY_ADJUSTED\"
-                AND API_ELIGIBLE = \"YES\"
+              WHERE TABLE_NAME = 'TIME_SERIES_DAILY_ADJUSTED'
+                AND API_ELIGIBLE = 'YES'
               GROUP BY EXCHANGE, ASSET_TYPE
               ORDER BY EXCHANGE, ASSET_TYPE
           ''')
