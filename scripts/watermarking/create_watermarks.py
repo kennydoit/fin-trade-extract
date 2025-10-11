@@ -118,8 +118,11 @@ class WatermarkManager:
         """Create the ETL_WATERMARKS table if it doesn't exist."""
         logger.info("🔧 Creating ETL_WATERMARKS table...")
         
+        # Force recreation of table to ensure correct schema
+        drop_table_sql = "DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS;"
+        
         create_table_sql = """
-        CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
+        CREATE TABLE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
             WATERMARK_ID NUMBER(38,0) IDENTITY(1,1) PRIMARY KEY,
             SYMBOL VARCHAR(20) NOT NULL,
             DATA_TYPE VARCHAR(50) NOT NULL,
@@ -137,6 +140,9 @@ class WatermarkManager:
         
         try:
             cursor = self.connection.cursor()
+            # First drop existing table if it has wrong schema
+            cursor.execute(drop_table_sql)
+            # Then create the correct table
             cursor.execute(create_table_sql)
             logger.info("✅ ETL_WATERMARKS table created successfully")
             cursor.close()
