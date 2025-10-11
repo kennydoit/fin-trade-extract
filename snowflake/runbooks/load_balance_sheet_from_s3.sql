@@ -91,8 +91,6 @@ CREATE TABLE FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET (
     COMMON_STOCK_SHARES_OUTSTANDING             NUMBER(20,0),
     
     -- METADATA
-    LOAD_DATE                                   VARCHAR(50),
-    FETCHED_AT                                  TIMESTAMP_NTZ,
     CREATED_AT                                  TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     
     -- Constraints
@@ -152,16 +150,14 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING (
     common_stock_shares_outstanding NUMBER(20,0),
     
     -- Metadata
-    load_date VARCHAR(50),
-    fetched_at TIMESTAMP_NTZ,
     source_filename VARCHAR(500)
 );
 
 -- 5) Load CSV files from S3 stage into staging table
 COPY INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING (
     symbol,
-    report_type,
     fiscal_date_ending,
+    report_type,
     reported_currency,
     total_assets,
     current_assets,
@@ -173,7 +169,6 @@ COPY INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING (
     property_plant_equipment,
     accumulated_depreciation_amortization_ppe,
     intangible_assets,
-    intangible_assets_excluding_goodwill,
     goodwill,
     investments,
     long_term_investments,
@@ -191,7 +186,6 @@ COPY INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING (
     long_term_debt,
     current_long_term_debt,
     long_term_debt_noncurrent,
-    short_long_term_debt_total,
     other_current_liabilities,
     other_non_current_liabilities,
     total_shareholder_equity,
@@ -199,59 +193,53 @@ COPY INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING (
     retained_earnings,
     common_stock,
     common_stock_shares_outstanding,
-    load_date,
-    fetched_at,
     source_filename
 )
 FROM (
     SELECT 
-        $1::VARCHAR(20),
-        $2::VARCHAR(20),
-        $3::DATE,
-        $4::VARCHAR(10),
-        $5::NUMBER(20,2),
-        $6::NUMBER(20,2),
-        $7::NUMBER(20,2),
-        $8::NUMBER(20,2),
-        $9::NUMBER(20,2),
-        $10::NUMBER(20,2),
-        $11::NUMBER(20,2),
-        $12::NUMBER(20,2),
-        $13::NUMBER(20,2),
-        $14::NUMBER(20,2),
-        $15::NUMBER(20,2),
-        $16::NUMBER(20,2),
-        $17::NUMBER(20,2),
-        $18::NUMBER(20,2),
-        $19::NUMBER(20,2),
-        $20::NUMBER(20,2),
-        $21::NUMBER(20,2),
-        $22::NUMBER(20,2),
-        $23::NUMBER(20,2),
-        $24::NUMBER(20,2),
-        $25::NUMBER(20,2),
-        $26::NUMBER(20,2),
-        $27::NUMBER(20,2),
-        $28::NUMBER(20,2),
-        $29::NUMBER(20,2),
-        $30::NUMBER(20,2),
-        $31::NUMBER(20,2),
-        $32::NUMBER(20,2),
-        $33::NUMBER(20,2),
-        $34::NUMBER(20,2),
-        $35::NUMBER(20,2),
-        $36::NUMBER(20,2),
-        $37::NUMBER(20,2),
-        $38::NUMBER(20,2),
-        $39::NUMBER(20,2),
-        $40::NUMBER(20,0),
-        $41::VARCHAR(50),
-        $42::TIMESTAMP_NTZ,
-        METADATA$FILENAME
+        $1::VARCHAR(20) as symbol,
+        TRY_TO_DATE($2, 'YYYY-MM-DD') as fiscal_date_ending,
+        $3::VARCHAR(20) as period_type,
+        $4::VARCHAR(10) as reported_currency,
+        TRY_TO_NUMBER($5, 20, 2) as total_assets,
+        TRY_TO_NUMBER($6, 20, 2) as total_current_assets,
+        TRY_TO_NUMBER($7, 20, 2) as cash_and_cash_equivalents,
+        TRY_TO_NUMBER($8, 20, 2) as cash_and_short_term_investments,
+        TRY_TO_NUMBER($9, 20, 2) as inventory,
+        TRY_TO_NUMBER($10, 20, 2) as current_net_receivables,
+        TRY_TO_NUMBER($11, 20, 2) as total_non_current_assets,
+        TRY_TO_NUMBER($12, 20, 2) as property_plant_equipment,
+        TRY_TO_NUMBER($13, 20, 2) as accumulated_depreciation_amortization_ppe,
+        TRY_TO_NUMBER($14, 20, 2) as intangible_assets,
+        TRY_TO_NUMBER($15, 20, 2) as goodwill,
+        TRY_TO_NUMBER($16, 20, 2) as investments,
+        TRY_TO_NUMBER($17, 20, 2) as long_term_investments,
+        TRY_TO_NUMBER($18, 20, 2) as short_term_investments,
+        TRY_TO_NUMBER($19, 20, 2) as other_current_assets,
+        TRY_TO_NUMBER($20, 20, 2) as other_non_current_assets,
+        TRY_TO_NUMBER($21, 20, 2) as total_liabilities,
+        TRY_TO_NUMBER($22, 20, 2) as total_current_liabilities,
+        TRY_TO_NUMBER($23, 20, 2) as current_accounts_payable,
+        TRY_TO_NUMBER($24, 20, 2) as deferred_revenue,
+        TRY_TO_NUMBER($25, 20, 2) as current_debt,
+        TRY_TO_NUMBER($26, 20, 2) as short_term_debt,
+        TRY_TO_NUMBER($27, 20, 2) as total_non_current_liabilities,
+        TRY_TO_NUMBER($28, 20, 2) as capital_lease_obligations,
+        TRY_TO_NUMBER($29, 20, 2) as long_term_debt,
+        TRY_TO_NUMBER($30, 20, 2) as current_long_term_debt,
+        TRY_TO_NUMBER($31, 20, 2) as long_term_debt_noncurrent,
+        TRY_TO_NUMBER($32, 20, 2) as other_current_liabilities,
+        TRY_TO_NUMBER($33, 20, 2) as other_non_current_liabilities,
+        TRY_TO_NUMBER($34, 20, 2) as total_shareholder_equity,
+        TRY_TO_NUMBER($35, 20, 2) as treasury_stock,
+        TRY_TO_NUMBER($36, 20, 2) as retained_earnings,
+        TRY_TO_NUMBER($37, 20, 2) as common_stock,
+        TRY_TO_NUMBER($38, 20, 0) as common_stock_shares_outstanding,
+        METADATA$FILENAME as source_filename
     FROM @BALANCE_SHEET_STAGE
 )
 FILE_FORMAT = (TYPE = 'CSV' SKIP_HEADER = 1)
-PATTERN = '.*BALANCE_SHEET.*\.csv'
+PATTERN = '.*\.csv'
 ON_ERROR = CONTINUE;
 
 -- Debug: Check staging data load
@@ -361,11 +349,7 @@ USING (
         staging.treasury_stock,
         staging.retained_earnings,
         staging.common_stock,
-        staging.common_stock_shares_outstanding,
-        
-        -- Metadata
-        staging.load_date,
-        staging.fetched_at
+        staging.common_stock_shares_outstanding
         
     FROM FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING staging
     WHERE staging.symbol IS NOT NULL
@@ -421,11 +405,7 @@ WHEN MATCHED THEN
         TREASURY_STOCK = source.treasury_stock,
         RETAINED_EARNINGS = source.retained_earnings,
         COMMON_STOCK = source.common_stock,
-        COMMON_STOCK_SHARES_OUTSTANDING = source.common_stock_shares_outstanding,
-        
-        -- Metadata
-        LOAD_DATE = source.load_date,
-        FETCHED_AT = source.fetched_at
+        COMMON_STOCK_SHARES_OUTSTANDING = source.common_stock_shares_outstanding
         
 WHEN NOT MATCHED THEN
     INSERT (
@@ -440,7 +420,7 @@ WHEN NOT MATCHED THEN
         LONG_TERM_DEBT, CURRENT_LONG_TERM_DEBT, LONG_TERM_DEBT_NONCURRENT,
         SHORT_LONG_TERM_DEBT_TOTAL, OTHER_CURRENT_LIABILITIES, OTHER_NON_CURRENT_LIABILITIES,
         TOTAL_SHAREHOLDER_EQUITY, TREASURY_STOCK, RETAINED_EARNINGS, COMMON_STOCK,
-        COMMON_STOCK_SHARES_OUTSTANDING, LOAD_DATE, FETCHED_AT
+        COMMON_STOCK_SHARES_OUTSTANDING
     )
     VALUES (
         source.symbol_id, source.symbol, source.report_type, source.fiscal_date_ending, 
@@ -456,8 +436,7 @@ WHEN NOT MATCHED THEN
         source.long_term_debt, source.current_long_term_debt, source.long_term_debt_noncurrent,
         source.short_long_term_debt_total, source.other_current_liabilities,
         source.other_non_current_liabilities, source.total_shareholder_equity, source.treasury_stock,
-        source.retained_earnings, source.common_stock, source.common_stock_shares_outstanding,
-        source.load_date, source.fetched_at
+        source.retained_earnings, source.common_stock, source.common_stock_shares_outstanding
     );
 
 -- 10) Final validation and reporting
