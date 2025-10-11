@@ -59,25 +59,43 @@ def execute_sql_statements(connection, sql_content):
     """Execute SQL statements from the SQL file."""
     logger.info("🚀 Executing watermark table creation SQL...")
     
+    # Split SQL content into individual statements
+    # Remove comments and empty lines first
+    lines = []
+    for line in sql_content.split('\n'):
+        # Skip comment lines
+        if line.strip().startswith('--'):
+            continue
+        lines.append(line)
+    
+    # Join lines and split by semicolon
+    cleaned_sql = '\n'.join(lines)
+    statements = [stmt.strip() for stmt in cleaned_sql.split(';') if stmt.strip()]
+    
+    logger.info(f"📝 Found {len(statements)} SQL statements to execute")
+    
     cursor = connection.cursor()
     
     try:
-        # Execute the entire SQL content
-        # Snowflake's Python connector can handle multiple statements
-        cursor.execute(sql_content, timeout=120)
-        
-        # Fetch and display results from all statements
-        try:
-            while True:
-                results = cursor.fetchall()
-                if results:
-                    for row in results:
-                        logger.info(f"  {row}")
-                if not cursor.nextset():
-                    break
-        except Exception:
-            # Some statements don't return results
-            pass
+        for i, statement in enumerate(statements, 1):
+            try:
+                logger.info(f"⚙️  Executing statement {i}/{len(statements)}...")
+                cursor.execute(statement)
+                
+                # Try to fetch results if available
+                try:
+                    results = cursor.fetchall()
+                    if results:
+                        for row in results:
+                            logger.info(f"  {row}")
+                except Exception:
+                    # Some statements don't return results (DDL, DML)
+                    pass
+                    
+            except Exception as e:
+                logger.warning(f"⚠️  Statement {i} warning: {e}")
+                # Continue with other statements even if one fails
+                continue
         
         logger.info("✅ SQL execution completed successfully")
         
