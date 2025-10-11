@@ -26,16 +26,26 @@ def run_sql_file(sql_path, ctx):
             result = ctx.cursor().execute(stmt)
             print(f"✅ Statement {i} completed successfully")
             
-            # For SELECT statements, show row count
+            # For SELECT statements, show row count and data
             if stmt.strip().upper().startswith('SELECT'):
                 rows = result.fetchall()
                 print(f"📊 Returned {len(rows)} rows")
+                # Show actual data for debugging
+                if rows:
+                    for row in rows[:5]:  # Show first 5 rows
+                        print(f"   📝 {row}")
+                    if len(rows) > 5:
+                        print(f"   ... and {len(rows) - 5} more rows")
             
             # For COPY statements, show copy results
             elif 'COPY INTO' in stmt.upper():
                 rows = result.fetchall()
                 if rows:
                     print(f"📥 COPY result: {rows[0]}")
+            
+            # For UPDATE/DELETE statements, show rows affected
+            elif stmt.strip().upper().startswith(('UPDATE', 'DELETE')):
+                print(f"🔄 Rows affected: {result.rowcount}")
                 
         except Exception as e:
             print(f"❌ ERROR executing statement {i}: {e}")
