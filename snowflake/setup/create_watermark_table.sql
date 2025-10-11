@@ -31,7 +31,13 @@ CREATE TABLE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
     -- Symbol Reference
     SYMBOL                      VARCHAR(20) NOT NULL,      -- Actual symbol for debugging and reference
     
-    -- Listing Information  
+    -- Listing Information from LISTING_STATUS
+    EXCHANGE                    VARCHAR(64),               -- Exchange (NYSE, NASDAQ, etc.)
+    ASSET_TYPE                  VARCHAR(64),               -- Asset type (Stock, ETF, etc.)
+    STATUS                      VARCHAR(12),               -- Status (Active, Delisted)
+    API_ELIGIBLE                VARCHAR(3) DEFAULT 'NO',   -- API eligibility: 'YES' or 'NO'
+    
+    -- IPO and Delisting Dates
     IPO_DATE                    DATE,                      -- IPO date from listing status
     DELISTING_DATE              DATE,                      -- Delisting date from listing status
     
@@ -57,11 +63,15 @@ CLUSTER BY (TABLE_NAME, LAST_SUCCESSFUL_RUN);
 
 -- This populates the table with all symbols from LISTING_STATUS (both active and delisted) as the foundation
 INSERT INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS 
-    (TABLE_NAME, SYMBOL_ID, SYMBOL, IPO_DATE, DELISTING_DATE, CREATED_AT, UPDATED_AT)
+    (TABLE_NAME, SYMBOL_ID, SYMBOL, EXCHANGE, ASSET_TYPE, STATUS, API_ELIGIBLE, IPO_DATE, DELISTING_DATE, CREATED_AT, UPDATED_AT)
 SELECT DISTINCT
     'LISTING_STATUS' as TABLE_NAME,
     ABS(HASH(ls.symbol)) % 1000000000 as SYMBOL_ID,
     ls.symbol as SYMBOL,
+    ls.exchange as EXCHANGE,
+    ls.assetType as ASSET_TYPE,
+    ls.status as STATUS,
+    'NO' as API_ELIGIBLE,  -- Default to NO, will be set to YES when creating data source-specific watermarks
     TRY_TO_DATE(ls.ipoDate, 'YYYY-MM-DD') as IPO_DATE,
     TRY_TO_DATE(ls.delistingDate, 'YYYY-MM-DD') as DELISTING_DATE,
     CURRENT_TIMESTAMP() as CREATED_AT,
@@ -88,6 +98,20 @@ FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
 WHERE TABLE_NAME = 'LISTING_STATUS'
 GROUP BY 1
 ORDER BY symbol_count DESC;
+
+-- Show summary by exchange and asset type
+SELECT 
+    'Summary by Exchange and Asset Type:' as MESSAGE;
+
+SELECT 
+    EXCHANGE,
+    ASSET_TYPE,
+    STATUS,
+    COUNT(*) as SYMBOL_COUNT
+FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS 
+WHERE TABLE_NAME = 'LISTING_STATUS'
+GROUP BY EXCHANGE, ASSET_TYPE, STATUS
+ORDER BY EXCHANGE, ASSET_TYPE, STATUS;
 
 -- ============================================================================
 -- 3) Create Supporting Views for Analytics
@@ -194,6 +218,10 @@ SELECT 'Sample watermark records:' as MESSAGE;
 SELECT TOP 10 
     SYMBOL,
     TABLE_NAME,
+    EXCHANGE,
+    ASSET_TYPE,
+    STATUS,
+    API_ELIGIBLE,
     IPO_DATE,
     DELISTING_DATE,
     CONSECUTIVE_FAILURES,
