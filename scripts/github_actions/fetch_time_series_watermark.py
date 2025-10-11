@@ -162,6 +162,7 @@ class WatermarkETLManager:
         cursor = self.connection.cursor()
         
         if success:
+            # Check if symbol has a delisting date - if so, mark as delisted after successful pull
             update_sql = f"""
                 UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
                 SET 
@@ -169,6 +170,11 @@ class WatermarkETLManager:
                     LAST_FISCAL_DATE = TO_DATE('{last_date}', 'YYYY-MM-DD'),
                     LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(),
                     CONSECUTIVE_FAILURES = 0,
+                    API_ELIGIBLE = CASE 
+                        WHEN DELISTING_DATE IS NOT NULL AND DELISTING_DATE <= CURRENT_DATE() 
+                        THEN 'DEL'
+                        ELSE API_ELIGIBLE 
+                    END,
                     UPDATED_AT = CURRENT_TIMESTAMP()
                 WHERE TABLE_NAME = '{self.table_name}'
                   AND SYMBOL = '{symbol}'
@@ -468,12 +474,26 @@ def main():
         results['duration_minutes'] = (datetime.fromisoformat(results['end_time']) - 
                                       datetime.fromisoformat(results['start_time'])).total_seconds() / 60
         
+        # Check how many delisted symbols were marked
+        cursor = watermark_manager.connection.cursor()
+        cursor.execute(f"""
+            SELECT COUNT(*) 
+            FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+            WHERE TABLE_NAME = '{watermark_manager.table_name}'
+              AND API_ELIGIBLE = 'DEL'
+        """)
+        delisted_count = cursor.fetchone()[0]
+        cursor.close()
+        results['delisted_marked'] = delisted_count
+        
         with open('/tmp/watermark_etl_results.json', 'w') as f:
             json.dump(results, f, indent=2)
         
         logger.info("🎉 ETL processing complete!")
         logger.info(f"✅ Successful: {results['successful']}/{results['total_symbols']}")
         logger.info(f"❌ Failed: {results['failed']}/{results['total_symbols']}")
+        if delisted_count > 0:
+            logger.info(f"🔒 Delisted symbols marked as 'DEL': {delisted_count}")
         
     finally:
         watermark_manager.close()

@@ -170,6 +170,12 @@ jobs:
         print(f'   - LAST_FISCAL_DATE updated to latest data')
         print(f'   - LAST_SUCCESSFUL_RUN = current timestamp')
         print(f'   - CONSECUTIVE_FAILURES reset to 0')
+        
+        # Show delisted symbols marked
+        if results.get('delisted_marked', 0) > 0:
+            print(f'')
+            print(f'🔒 Delisted symbols marked as API_ELIGIBLE=\"DEL\": {results[\"delisted_marked\"]}')
+            print(f'   (Symbols with DELISTING_DATE that have been successfully extracted)')
         "
         else
           echo "❌ No results file found - check logs for errors"
