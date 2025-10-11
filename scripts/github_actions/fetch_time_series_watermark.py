@@ -194,6 +194,62 @@ class AlphaVantageRateLimiter:
         self.last_call_time = time.time()
 
 
+def cleanup_s3_bucket(bucket: str, s3_prefix: str, s3_client) -> int:
+    """Delete all existing files in the S3 bucket before processing."""
+    logger.info("🧹 Cleaning up S3 bucket before extraction...")
+    logger.info(f"📂 Target: s3://{bucket}/{s3_prefix}")
+    
+    try:
+        total_deleted = 0
+        continuation_token = None
+        
+        while True:
+            # List objects (handles pagination for large numbers of files)
+            list_kwargs = {
+                'Bucket': bucket,
+                'Prefix': s3_prefix
+            }
+            if continuation_token:
+                list_kwargs['ContinuationToken'] = continuation_token
+            
+            response = s3_client.list_objects_v2(**list_kwargs)
+            
+            if 'Contents' not in response:
+                if total_deleted == 0:
+                    logger.info("✅ S3 bucket is already empty")
+                break
+            
+            # Get objects to delete (max 1000 per batch due to AWS limits)
+            objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+            
+            if objects_to_delete:
+                logger.info(f"🗑️  Deleting batch of {len(objects_to_delete)} files from S3...")
+                
+                s3_client.delete_objects(
+                    Bucket=bucket,
+                    Delete={'Objects': objects_to_delete}
+                )
+                
+                total_deleted += len(objects_to_delete)
+                logger.info(f"✅ Deleted {len(objects_to_delete)} files (total: {total_deleted})")
+            
+            # Check if there are more objects to delete
+            if not response.get('IsTruncated', False):
+                break
+                
+            continuation_token = response.get('NextContinuationToken')
+        
+        if total_deleted > 0:
+            logger.info(f"🎉 Successfully deleted {total_deleted} files from s3://{bucket}/{s3_prefix}")
+        
+        return total_deleted
+        
+    except Exception as e:
+        logger.warning(f"⚠️  Error cleaning S3 bucket: {e}")
+        logger.info("🔄 Continuing with extraction despite cleanup error...")
+        return 0
+
+
 def fetch_time_series_data(symbol: str, api_key: str, output_size: str = 'full') -> Optional[Dict]:
     """
     Fetch time series data from Alpha Vantage.
@@ -312,7 +368,18 @@ def main():
     s3_client = boto3.client('s3')
     
     try:
+        # Clean up S3 bucket before extraction (critical for COPY FROM s3://.../*.csv)
+        logger.info("=" * 60)
+        logger.info("🧹 STEP 1: Clean up existing S3 files")
+        logger.info("=" * 60)
+        deleted_count = cleanup_s3_bucket(s3_bucket, s3_prefix, s3_client)
+        logger.info(f"✅ Cleanup complete: {deleted_count} old files removed")
+        logger.info("")
+        
         # Get symbols to process from watermarks
+        logger.info("=" * 60)
+        logger.info("🔍 STEP 2: Query watermarks for symbols to process")
+        logger.info("=" * 60)
         symbols_to_process = watermark_manager.get_symbols_to_process(
             exchange_filter=exchange_filter,
             max_symbols=max_symbols,
@@ -323,7 +390,13 @@ def main():
             logger.warning("⚠️  No symbols to process")
             return
         
+        logger.info("")
+        
         # Process symbols in batches
+        logger.info("=" * 60)
+        logger.info("🚀 STEP 3: Extract time series data from Alpha Vantage")
+        logger.info("=" * 60)
+        
         results = {
             'total_symbols': len(symbols_to_process),
             'successful': 0,
