@@ -14,10 +14,16 @@ USE WAREHOUSE FIN_TRADE_WH;
 USE ROLE ETL_ROLE;
 
 -- ============================================================================
+-- 0) Drop Existing Table (Force Recreate)
+-- ============================================================================
+-- This ensures we always get the correct schema, even if an old table exists
+DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS;
+
+-- ============================================================================
 -- 1) Create ETL Watermarks Table
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
+CREATE TABLE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
     -- Primary Keys
     TABLE_NAME                  VARCHAR(100) NOT NULL,     -- Target table name (e.g., 'BALANCE_SHEET', 'TIME_SERIES_DAILY_ADJUSTED')
     SYMBOL_ID                   NUMBER(38,0) NOT NULL,     -- Hash-based symbol identifier for consistent joins

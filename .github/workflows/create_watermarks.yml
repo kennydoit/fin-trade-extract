@@ -1,23 +1,13 @@
-name: Create ETL Watermarks
+name: Create ETL Watermarks Table
 
 on:
   workflow_dispatch:
     inputs:
-      table_name:
-        description: 'Table name to initialize watermarks for'
-        required: true
-        type: choice
-        options:
-          - TIME_SERIES_DAILY_ADJUSTED
-          - COMPANY_OVERVIEW
-          - LISTING_STATUS
-          - BALANCE_SHEET
-        default: 'TIME_SERIES_DAILY_ADJUSTED'
-      create_table_only:
-        description: 'Only create the watermarks table (do not initialize data)'
+      force_recreate:
+        description: 'Force recreate table (drops existing table first)'
         required: false
         type: boolean
-        default: false
+        default: true
 
 jobs:
   create-watermarks:
@@ -45,20 +35,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install snowflake-connector-python
 
-      - name: Create ETL Watermarks
+      - name: Create ETL Watermarks Table
         run: |
-          echo "🚀 Creating ETL watermarks for table: ${{ github.event.inputs.table_name }}"
+          echo "🚀 Creating ETL_WATERMARKS table from SQL file"
           echo "📅 Timestamp: $(date)"
-          echo "🔧 Create table only: ${{ github.event.inputs.create_table_only }}"
+          echo "� Using: snowflake/setup/create_watermark_table.sql"
           
-          if [ "${{ github.event.inputs.create_table_only }}" = "true" ]; then
-            python scripts/watermarking/create_watermarks.py \
-              --table-name "${{ github.event.inputs.table_name }}" \
-              --create-table-only
-          else
-            python scripts/watermarking/create_watermarks.py \
-              --table-name "${{ github.event.inputs.table_name }}"
-          fi
+          python scripts/watermarking/create_watermarks_from_sql.py
 
       - name: Generate Watermark Report
         run: |
@@ -79,23 +62,28 @@ jobs:
           conn = snowflake.connector.connect(**config)
           cursor = conn.cursor()
           
-          # Get watermark summary
+          # Get watermark summary using correct column names
           cursor.execute('''
               SELECT 
-                  DATA_TYPE,
-                  PROCESSING_STATUS,
-                  COUNT(*) as COUNT
+                  TABLE_NAME,
+                  COUNT(*) as SYMBOL_COUNT,
+                  COUNT(CASE WHEN CONSECUTIVE_FAILURES = 0 THEN 1 END) as SUCCESSFUL,
+                  COUNT(CASE WHEN CONSECUTIVE_FAILURES > 0 THEN 1 END) as FAILED,
+                  MAX(LAST_SUCCESSFUL_RUN) as MOST_RECENT_SUCCESS
               FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-              GROUP BY DATA_TYPE, PROCESSING_STATUS
-              ORDER BY DATA_TYPE, PROCESSING_STATUS
+              GROUP BY TABLE_NAME
+              ORDER BY TABLE_NAME
           ''')
           
           results = cursor.fetchall()
           
           print('📋 Current ETL Watermarks Summary:')
-          print('=' * 50)
+          print('=' * 80)
+          print(f'{\"Table Name\":<30} | {\"Symbols\":<8} | {\"Success\":<8} | {\"Failed\":<8} | {\"Last Success\":<20}')
+          print('=' * 80)
           for row in results:
-              print(f'{row[0]} | {row[1]} | {row[2]} records')
+              last_success = str(row[4]) if row[4] else 'Never'
+              print(f'{row[0]:<30} | {row[1]:<8} | {row[2]:<8} | {row[3]:<8} | {last_success:<20}')
           
           cursor.close()
           conn.close()
@@ -106,8 +94,7 @@ jobs:
           echo "💾 Saving watermarking results..."
           cat > watermark_results.json << EOF
           {
-            "table_name": "${{ github.event.inputs.table_name }}",
-            "create_table_only": "${{ github.event.inputs.create_table_only }}",
+            "force_recreate": "${{ github.event.inputs.force_recreate }}",
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "status": "completed"
           }
@@ -116,6 +103,6 @@ jobs:
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
-          name: watermark-results-${{ github.event.inputs.table_name }}-${{ github.run_number }}
+          name: watermark-results-${{ github.run_number }}
           path: watermark_results.json
           retention-days: 30

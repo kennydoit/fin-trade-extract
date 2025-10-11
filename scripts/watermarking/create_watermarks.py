@@ -123,19 +123,32 @@ class WatermarkManager:
         
         create_table_sql = """
         CREATE TABLE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
-            WATERMARK_ID NUMBER(38,0) IDENTITY(1,1) PRIMARY KEY,
-            SYMBOL VARCHAR(20) NOT NULL,
-            DATA_TYPE VARCHAR(50) NOT NULL,
-            PROCESSING_STATUS VARCHAR(20) NOT NULL,
-            LAST_PROCESSED_DATE DATE,
-            LAST_UPDATED TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
-            ERROR_MESSAGE VARCHAR(2000),
-            RETRY_COUNT NUMBER(10,0) DEFAULT 0,
-            CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
+            -- Primary Keys
+            TABLE_NAME                  VARCHAR(100) NOT NULL,
+            SYMBOL_ID                   NUMBER(38,0) NOT NULL,
             
-            -- Create unique constraint on symbol + data_type combination
-            CONSTRAINT UK_ETL_WATERMARKS_SYMBOL_DATA_TYPE UNIQUE (SYMBOL, DATA_TYPE)
-        );
+            -- Symbol Reference
+            SYMBOL                      VARCHAR(20) NOT NULL,
+            
+            -- Listing Information  
+            IPO_DATE                    DATE,
+            DELISTING_DATE              DATE,
+            
+            -- Processing Tracking
+            FIRST_FISCAL_DATE           DATE,
+            LAST_FISCAL_DATE            DATE,
+            LAST_SUCCESSFUL_RUN         TIMESTAMP_NTZ,
+            CONSECUTIVE_FAILURES        NUMBER(5,0) DEFAULT 0,
+            
+            -- Audit Fields
+            CREATED_AT                  TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+            UPDATED_AT                  TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+            
+            -- Constraints
+            CONSTRAINT PK_ETL_WATERMARKS PRIMARY KEY (TABLE_NAME, SYMBOL_ID)
+        )
+        COMMENT = 'ETL watermarking table for tracking processing status and symbol lifecycle across all data types'
+        CLUSTER BY (TABLE_NAME, LAST_SUCCESSFUL_RUN);
         """
         
         try:
