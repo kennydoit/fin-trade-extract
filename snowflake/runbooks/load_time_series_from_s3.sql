@@ -110,9 +110,10 @@ ON_ERROR = CONTINUE;
 SELECT COUNT(*) as staging_rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING;
 
 -- 6) Extract symbol from filename
--- Filename pattern: time_series_daily_adjusted/SYMBOL_TIMESTAMP.csv (e.g., AAA_20251011_123739.csv)
+-- Filename pattern: time_series_daily_adjusted/SYMBOL_TIMESTAMP.csv (e.g., AAA_20251011_123739.csv, AA-W_20251011_124558.csv)
+-- Symbols can contain: letters, numbers, dots (BRK.B), hyphens (AA-W), underscores
 UPDATE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING 
-SET symbol = REGEXP_SUBSTR(source_filename, '([A-Z0-9.]+)_[0-9]{8}_[0-9]{6}\\.csv', 1, 1, 'e', 1)
+SET symbol = REGEXP_SUBSTR(source_filename, '([A-Z0-9._-]+)_[0-9]{8}_[0-9]{6}\\.csv', 1, 1, 'e', 1)
 WHERE symbol IS NULL;
 
 -- Debug: Check symbol extraction
