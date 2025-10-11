@@ -46,9 +46,16 @@ class WatermarkETLManager:
     
     def get_symbols_to_process(self, exchange_filter: Optional[str] = None,
                                max_symbols: Optional[int] = None,
-                               staleness_days: int = 5) -> List[Dict]:
+                               staleness_days: int = 5,
+                               skip_recent_hours: Optional[int] = None) -> List[Dict]:
         """
         Get symbols to process from ETL_WATERMARKS table.
+        
+        Args:
+            exchange_filter: Filter by exchange (NYSE, NASDAQ, etc.)
+            max_symbols: Maximum number of symbols to return
+            staleness_days: Days before data is considered stale
+            skip_recent_hours: Skip symbols processed within this many hours (for incremental runs)
         
         Returns list of dicts with:
         - symbol: stock ticker
@@ -71,6 +78,13 @@ class WatermarkETLManager:
             WHERE TABLE_NAME = '{self.table_name}'
               AND API_ELIGIBLE = 'YES'
         """
+        
+        # Skip recently processed symbols if requested
+        if skip_recent_hours:
+            query += f"""
+              AND (LAST_SUCCESSFUL_RUN IS NULL 
+                   OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
+            """
         
         if exchange_filter:
             query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
@@ -350,6 +364,7 @@ def main():
     exchange_filter = os.environ.get('EXCHANGE_FILTER')  # NYSE, NASDAQ, or None for all
     max_symbols = int(os.environ['MAX_SYMBOLS']) if os.environ.get('MAX_SYMBOLS') else None
     staleness_days = int(os.environ.get('STALENESS_DAYS', '5'))
+    skip_recent_hours = int(os.environ['SKIP_RECENT_HOURS']) if os.environ.get('SKIP_RECENT_HOURS') else None
     batch_size = int(os.environ.get('BATCH_SIZE', '50'))
     
     # Snowflake configuration
@@ -383,7 +398,8 @@ def main():
         symbols_to_process = watermark_manager.get_symbols_to_process(
             exchange_filter=exchange_filter,
             max_symbols=max_symbols,
-            staleness_days=staleness_days
+            staleness_days=staleness_days,
+            skip_recent_hours=skip_recent_hours
         )
         
         if not symbols_to_process:
