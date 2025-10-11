@@ -1,0 +1,140 @@
+name: Add Data Source Watermarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_sources:
+        description: 'Data sources to create watermarks for'
+        required: true
+        type: choice
+        options:
+          - TIME_SERIES_DAILY_ADJUSTED
+          - COMPANY_OVERVIEW
+          - BALANCE_SHEET
+          - ALL_SOURCES
+        default: 'TIME_SERIES_DAILY_ADJUSTED'
+
+jobs:
+  add-data-source-watermarks:
+    runs-on: ubuntu-latest
+    
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+      SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install snowflake-connector-python
+
+      - name: Add Data Source Watermarks
+        run: |
+          echo "🚀 Creating data source watermarks"
+          echo "📅 Timestamp: $(date)"
+          echo "📊 Data sources: ${{ github.event.inputs.data_sources }}"
+          echo "📄 Using: snowflake/setup/create_data_source_watermarks.sql"
+          
+          python scripts/watermarking/create_data_source_watermarks.py
+
+      - name: Generate Summary Report
+        run: |
+          echo "📊 Generating watermark summary report..."
+          python -c "
+          import snowflake.connector
+          import os
+          
+          config = {
+              'account': os.getenv('SNOWFLAKE_ACCOUNT'),
+              'user': os.getenv('SNOWFLAKE_USER'),
+              'password': os.getenv('SNOWFLAKE_PASSWORD'),
+              'database': os.getenv('SNOWFLAKE_DATABASE'),
+              'schema': os.getenv('SNOWFLAKE_SCHEMA'),
+              'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE')
+          }
+          
+          conn = snowflake.connector.connect(**config)
+          cursor = conn.cursor()
+          
+          # Get summary by table name
+          cursor.execute('''
+              SELECT 
+                  TABLE_NAME,
+                  COUNT(*) as TOTAL_SYMBOLS,
+                  COUNT(CASE WHEN API_ELIGIBLE = \"YES\" THEN 1 END) as API_ELIGIBLE,
+                  COUNT(CASE WHEN API_ELIGIBLE = \"NO\" THEN 1 END) as NOT_ELIGIBLE,
+                  ROUND(COUNT(CASE WHEN API_ELIGIBLE = \"YES\" THEN 1 END) * 100.0 / COUNT(*), 2) as ELIGIBLE_PCT
+              FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+              GROUP BY TABLE_NAME
+              ORDER BY TABLE_NAME
+          ''')
+          
+          results = cursor.fetchall()
+          
+          print('📋 Watermarks Summary by Data Source:')
+          print('=' * 100)
+          print(f'{\"Table Name\":<35} | {\"Total\":<8} | {\"Eligible\":<10} | {\"Not Eligible\":<12} | {\"% Eligible\":<10}')
+          print('=' * 100)
+          for row in results:
+              print(f'{row[0]:<35} | {row[1]:<8} | {row[2]:<10} | {row[3]:<12} | {row[4]:<10.2f}%')
+          
+          print('=' * 100)
+          
+          # Show TIME_SERIES_DAILY_ADJUSTED details if it exists
+          cursor.execute('''
+              SELECT 
+                  EXCHANGE,
+                  ASSET_TYPE,
+                  COUNT(*) as SYMBOL_COUNT
+              FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+              WHERE TABLE_NAME = \"TIME_SERIES_DAILY_ADJUSTED\"
+                AND API_ELIGIBLE = \"YES\"
+              GROUP BY EXCHANGE, ASSET_TYPE
+              ORDER BY EXCHANGE, ASSET_TYPE
+          ''')
+          
+          results = cursor.fetchall()
+          
+          if results:
+              print()
+              print('📊 TIME_SERIES_DAILY_ADJUSTED Details (API Eligible):')
+              print('=' * 60)
+              print(f'{\"Exchange\":<15} | {\"Asset Type\":<20} | {\"Count\":<10}')
+              print('=' * 60)
+              for row in results:
+                  print(f'{row[0]:<15} | {row[1]:<20} | {row[2]:<10}')
+              print('=' * 60)
+          
+          cursor.close()
+          conn.close()
+          "
+
+      - name: Save Results
+        run: |
+          echo "💾 Saving results..."
+          cat > watermark_results.json << EOF
+          {
+            "data_sources": "${{ github.event.inputs.data_sources }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "status": "completed"
+          }
+          EOF
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-source-watermarks-${{ github.run_number }}
+          path: watermark_results.json
+          retention-days: 30
