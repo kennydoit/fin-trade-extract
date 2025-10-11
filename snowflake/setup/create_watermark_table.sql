@@ -30,6 +30,7 @@ CREATE TABLE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS (
     
     -- Symbol Reference
     SYMBOL                      VARCHAR(20) NOT NULL,      -- Actual symbol for debugging and reference
+    NAME                        VARCHAR(255),              -- Company/security name from listing status
     
     -- Listing Information from LISTING_STATUS
     EXCHANGE                    VARCHAR(64),               -- Exchange (NYSE, NASDAQ, etc.)
@@ -63,11 +64,12 @@ CLUSTER BY (TABLE_NAME, LAST_SUCCESSFUL_RUN);
 
 -- This populates the table with all symbols from LISTING_STATUS (both active and delisted) as the foundation
 INSERT INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS 
-    (TABLE_NAME, SYMBOL_ID, SYMBOL, EXCHANGE, ASSET_TYPE, STATUS, API_ELIGIBLE, IPO_DATE, DELISTING_DATE, CREATED_AT, UPDATED_AT)
+    (TABLE_NAME, SYMBOL_ID, SYMBOL, NAME, EXCHANGE, ASSET_TYPE, STATUS, API_ELIGIBLE, IPO_DATE, DELISTING_DATE, CREATED_AT, UPDATED_AT)
 SELECT DISTINCT
     'LISTING_STATUS' as TABLE_NAME,
     ABS(HASH(ls.symbol)) % 1000000000 as SYMBOL_ID,
     ls.symbol as SYMBOL,
+    ls.name as NAME,
     ls.exchange as EXCHANGE,
     ls.assetType as ASSET_TYPE,
     ls.status as STATUS,
@@ -217,6 +219,7 @@ WHERE TABLE_NAME = 'LISTING_STATUS';
 SELECT 'Sample watermark records:' as MESSAGE;
 SELECT TOP 10 
     SYMBOL,
+    NAME,
     TABLE_NAME,
     EXCHANGE,
     ASSET_TYPE,
