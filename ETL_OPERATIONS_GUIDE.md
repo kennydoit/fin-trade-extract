@@ -91,7 +91,9 @@ WHERE TABLE_NAME = 'LISTING_STATUS';
 - Processing mode: **FULL** (complete history from IPO)
 - After success: Updates `FIRST_FISCAL_DATE`, `LAST_FISCAL_DATE`, `LAST_SUCCESSFUL_RUN`
 
-#### 3. Incremental Extractions (Compact Mode)
+#### 3. Incremental Extractions
+
+**📊 TIME SERIES (Daily Price Data):**
 - Script queries: `WHERE API_ELIGIBLE = 'YES'`
 - Processing mode decision:
   ```python
@@ -101,6 +103,35 @@ WHERE TABLE_NAME = 'LISTING_STATUS';
   else:
       mode = 'full'     # Complete refresh
   ```
+
+**📈 FUNDAMENTALS (Balance Sheet, Cash Flow, Income Statement):**
+- Script queries with **135-day staleness check**:
+  ```sql
+  WHERE API_ELIGIBLE = 'YES'
+    AND (LAST_FISCAL_DATE IS NULL 
+         OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
+  ```
+- **Rationale:** 
+  - Quarterly data is reported every ~90 days
+  - Add 45-day grace period for filing delays
+  - **135 days total** = Don't re-fetch until new data is likely available
+  - **Saves API quota** by not requesting data that hasn't changed
+
+**Example:**
+```
+LAST_FISCAL_DATE = 2025-06-30 (Q2 earnings)
+Eligible again on: 2025-11-12 (135 days later, Q3 should be filed)
+If run on 2025-10-15: SKIPPED (only 107 days, too soon)
+If run on 2025-11-15: INCLUDED (137 days, Q3 likely available)
+```
+
+**Applies to:**
+- ✅ `BALANCE_SHEET`
+- ✅ `CASH_FLOW` (when implemented)
+- ✅ `INCOME_STATEMENT` (when implemented)
+- ✅ `EARNINGS_CALL_TRANSCRIPT` (when implemented)
+- ❌ `TIME_SERIES_DAILY_ADJUSTED` (uses 5-day staleness instead)
+- ❌ `COMPANY_OVERVIEW` (static data, different refresh logic)
 
 #### 4. Delisting Detection
 - On successful extraction, checks `DELISTING_DATE`:
@@ -122,6 +153,66 @@ WHERE TABLE_NAME = 'LISTING_STATUS';
 | `'DEL'` | Delisted, final data captured | ❌ No | Delisted stocks, saves API quota |
 
 **CRITICAL:** Once `API_ELIGIBLE = 'DEL'`, the symbol is **permanently excluded** unless manually reset.
+
+### Fundamentals Staleness Logic (135-Day Rule)
+
+**🎯 Purpose:** Prevent unnecessary API calls for fundamentals that haven't changed yet.
+
+**The Problem:**
+- Quarterly financial statements (balance sheet, cash flow, income statement) are released every ~90 days
+- Companies have 45 days after quarter-end to file with SEC
+- Fetching data before new quarters are available wastes API quota
+
+**The Solution: 135-Day Staleness Check**
+
+```sql
+-- Only eligible if LAST_FISCAL_DATE is NULL or older than 135 days
+WHERE API_ELIGIBLE = 'YES'
+  AND (LAST_FISCAL_DATE IS NULL 
+       OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
+```
+
+**Breakdown:**
+- **90 days** = One quarter (typical reporting cycle)
+- **45 days** = SEC filing grace period (companies can file within 45 days of quarter end)
+- **135 days total** = Safe window ensuring new data is available
+
+**Real-World Example:**
+
+| Scenario | LAST_FISCAL_DATE | Current Date | Days Since | Eligible? | Reason |
+|----------|------------------|--------------|------------|-----------|--------|
+| First run | NULL | 2025-10-12 | N/A | ✅ YES | No data yet, fetch all history |
+| Recent Q2 | 2025-06-30 | 2025-10-12 | 104 days | ❌ NO | Too soon, Q3 not filed yet |
+| Stale Q2 | 2025-06-30 | 2025-11-15 | 138 days | ✅ YES | Q3 should be available now |
+| Old Q1 | 2025-03-31 | 2025-10-12 | 195 days | ✅ YES | Very stale, Q2 & Q3 available |
+
+**Cost Savings:**
+
+Without 135-day check:
+- Daily runs = 365 API calls/symbol/year
+- 3,000 symbols = 1,095,000 API calls/year
+- Most calls return unchanged data (waste of quota)
+
+With 135-day check:
+- ~2.7 calls/symbol/year (quarterly updates only)
+- 3,000 symbols = 8,100 API calls/year
+- **99.3% reduction in unnecessary API calls!**
+
+**Data Sources Using 135-Day Rule:**
+- ✅ `BALANCE_SHEET`
+- ✅ `CASH_FLOW` (when implemented)
+- ✅ `INCOME_STATEMENT` (when implemented)
+- ✅ `EARNINGS_CALL_TRANSCRIPT` (when implemented)
+
+**Data Sources NOT Using This Rule:**
+- ❌ `TIME_SERIES_DAILY_ADJUSTED` - Uses 5-day staleness (daily data)
+- ❌ `COMPANY_OVERVIEW` - Static data, infrequent updates
+- ❌ `LISTING_STATUS` - Master reference, updated manually
+
+**Implementation Notes:**
+- This logic is **IN ADDITION TO** `skip_recent_hours` parameter
+- Both filters apply (AND logic): Must pass staleness check AND not recently processed
+- Can be overridden by setting `LAST_FISCAL_DATE = NULL` to force re-extraction
 
 ### Incremental Processing with skip_recent_hours
 
@@ -683,7 +774,68 @@ ALTER WAREHOUSE FIN_TRADE_WH SET RESOURCE_MONITOR = ETL_COST_MONITOR;
 
 ## Data Integrity Rules
 
-### Rule 1: Primary Keys and Deduplication
+### Rule 1: Metadata Column Standardization
+
+**⚠️ CRITICAL: All tables MUST use LOAD_DATE, not CREATED_AT or other variants**
+
+**Standard Metadata Column:**
+```sql
+-- ✅ CORRECT: Use LOAD_DATE DATE column
+LOAD_DATE DATE DEFAULT CURRENT_DATE()
+
+-- ❌ WRONG: Don't use CREATED_AT, UPDATED_AT, or timestamps
+CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()  -- NO!
+```
+
+**Why LOAD_DATE:**
+- **Consistency**: All tables use the same column name and type
+- **Simplicity**: DATE is sufficient for batch ETL (don't need timestamp precision)
+- **Compatibility**: Existing queries and joins work across all tables
+- **Audit trail**: Tracks when data was loaded into Snowflake
+
+**Required Implementation:**
+
+1. **Table Definition:**
+```sql
+CREATE TABLE IF NOT EXISTS MY_TABLE (
+    -- Business columns
+    SYMBOL VARCHAR(20),
+    ...
+    
+    -- Metadata (ALWAYS include this)
+    LOAD_DATE DATE DEFAULT CURRENT_DATE()
+);
+```
+
+2. **MERGE Statement UPDATE:**
+```sql
+WHEN MATCHED THEN
+    UPDATE SET
+        column1 = source.column1,
+        ...
+        LOAD_DATE = CURRENT_DATE()  -- ← Update on every MERGE
+```
+
+3. **MERGE Statement INSERT:**
+```sql
+WHEN NOT MATCHED THEN
+    INSERT (column1, ..., LOAD_DATE)
+    VALUES (source.column1, ..., CURRENT_DATE())
+```
+
+**Tables Using LOAD_DATE:**
+- ✅ `TIME_SERIES_DAILY_ADJUSTED` - `LOAD_DATE DATE`
+- ✅ `LISTING_STATUS` - `LOAD_DATE DATE`
+- ✅ `COMPANY_OVERVIEW` - `LOAD_DATE DATE`
+- ✅ `BALANCE_SHEET` - `LOAD_DATE DATE`
+- ✅ Future tables (CASH_FLOW, INCOME_STATEMENT, etc.) - Must use `LOAD_DATE DATE`
+
+**If you see CREATED_AT or UPDATED_AT in a table:**
+- That table needs to be fixed
+- Drop and recreate with LOAD_DATE
+- Or ALTER TABLE to rename (if data exists)
+
+### Rule 2: Primary Keys and Deduplication
 
 **TIME_SERIES_DAILY_ADJUSTED:**
 - Natural Key: `(symbol, date)`
@@ -839,6 +991,63 @@ FROM TIME_SERIES_DAILY_ADJUSTED;
 - Increase delay between API calls
 - Split large runs across multiple days
 - Use `skip_recent_hours` to avoid re-processing
+
+### Issue 6: Fundamentals Not Updating (135-Day Staleness)
+
+**Symptoms:**
+- Balance sheet workflow runs but processes 0 symbols
+- Logs show "No symbols to process" even though data exists
+- Recent extractions but no new data loaded
+
+**Diagnosis:**
+```sql
+-- Check how many symbols are blocked by staleness check
+SELECT 
+    COUNT(*) as total_symbols,
+    COUNT(CASE WHEN LAST_FISCAL_DATE IS NULL THEN 1 END) as never_processed,
+    COUNT(CASE WHEN LAST_FISCAL_DATE >= DATEADD(day, -135, CURRENT_DATE()) THEN 1 END) as too_recent,
+    COUNT(CASE WHEN LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()) THEN 1 END) as eligible,
+    MAX(LAST_FISCAL_DATE) as most_recent_fiscal_date,
+    DATEDIFF('day', MAX(LAST_FISCAL_DATE), CURRENT_DATE()) as days_since_most_recent
+FROM ETL_WATERMARKS
+WHERE TABLE_NAME = 'BALANCE_SHEET' AND API_ELIGIBLE = 'YES';
+```
+
+**Root Cause:** 135-day staleness filter working as designed - data was extracted <135 days ago
+
+**Expected Behavior:**
+- After initial extraction, symbols won't be re-processed until 135 days later
+- This saves API quota by not fetching data that hasn't changed
+- Example: If last run was 60 days ago, wait 75 more days before next run
+
+**When to Override (Testing Only):**
+```sql
+-- Force specific symbols to be eligible again
+UPDATE ETL_WATERMARKS
+SET LAST_FISCAL_DATE = NULL  -- Makes symbol eligible immediately
+WHERE TABLE_NAME = 'BALANCE_SHEET'
+  AND SYMBOL IN ('AAPL', 'MSFT', 'GOOGL');
+
+-- OR force ALL symbols eligible (use with max_symbols for testing!)
+UPDATE ETL_WATERMARKS
+SET LAST_FISCAL_DATE = NULL
+WHERE TABLE_NAME = 'BALANCE_SHEET';
+```
+
+**Production Best Practice:**
+- Let the 135-day logic work naturally
+- Run fundamentals quarterly (every 90-120 days)
+- Use `max_symbols` for testing, not to override staleness
+
+**Timeline Example:**
+```
+2025-06-30: Initial extraction of Q2 data
+2025-07-15: Workflow runs → 0 symbols (only 15 days old)
+2025-08-30: Workflow runs → 0 symbols (only 61 days old)
+2025-10-15: Workflow runs → 0 symbols (only 107 days old)
+2025-11-15: Workflow runs → ALL symbols eligible (138 days, Q3 available!)
+```
+
 
 ### Issue 6: Invalid PARALLEL Parameter Error
 

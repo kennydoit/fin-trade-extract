@@ -74,6 +74,14 @@ class WatermarkETLManager:
               AND API_ELIGIBLE = 'YES'
         """
         
+        # FUNDAMENTALS-SPECIFIC LOGIC: Only pull if 135 days have passed since LAST_FISCAL_DATE
+        # This prevents unnecessary API calls when new quarterly data isn't available yet
+        # 135 days = 90 days (1 quarter) + 45 days (grace period for filing delays)
+        query += """
+              AND (LAST_FISCAL_DATE IS NULL 
+                   OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
+        """
+        
         # Skip recently processed symbols if requested
         if skip_recent_hours:
             query += f"""
@@ -90,6 +98,7 @@ class WatermarkETLManager:
             query += f"\n            LIMIT {max_symbols}"
         
         logger.info(f"📊 Querying watermarks for {self.table_name}...")
+        logger.info(f"📅 Fundamentals logic: Only symbols with LAST_FISCAL_DATE older than 135 days (or NULL)")
         if exchange_filter:
             logger.info(f"🏢 Exchange filter: {exchange_filter}")
         if max_symbols:

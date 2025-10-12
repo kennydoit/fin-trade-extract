@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET (
     COMMON_STOCK_SHARES_OUTSTANDING             NUMBER(20,0),
     
     -- METADATA
-    CREATED_AT                                  TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    LOAD_DATE                                   DATE DEFAULT CURRENT_DATE(),
     
     -- Constraints
     CONSTRAINT UK_BALANCE_SHEET_SYMBOL_TYPE_DATE UNIQUE (SYMBOL, REPORT_TYPE, FISCAL_DATE_ENDING)
@@ -408,7 +408,10 @@ WHEN MATCHED THEN
         TREASURY_STOCK = source.treasury_stock,
         RETAINED_EARNINGS = source.retained_earnings,
         COMMON_STOCK = source.common_stock,
-        COMMON_STOCK_SHARES_OUTSTANDING = source.common_stock_shares_outstanding
+        COMMON_STOCK_SHARES_OUTSTANDING = source.common_stock_shares_outstanding,
+        
+        -- Metadata
+        LOAD_DATE = CURRENT_DATE()
         
 WHEN NOT MATCHED THEN
     INSERT (
@@ -423,7 +426,7 @@ WHEN NOT MATCHED THEN
         LONG_TERM_DEBT, CURRENT_LONG_TERM_DEBT, LONG_TERM_DEBT_NONCURRENT,
         SHORT_LONG_TERM_DEBT_TOTAL, OTHER_CURRENT_LIABILITIES, OTHER_NON_CURRENT_LIABILITIES,
         TOTAL_SHAREHOLDER_EQUITY, TREASURY_STOCK, RETAINED_EARNINGS, COMMON_STOCK,
-        COMMON_STOCK_SHARES_OUTSTANDING
+        COMMON_STOCK_SHARES_OUTSTANDING, LOAD_DATE
     )
     VALUES (
         source.symbol_id, source.symbol, source.report_type, source.fiscal_date_ending, 
@@ -439,7 +442,8 @@ WHEN NOT MATCHED THEN
         source.long_term_debt, source.current_long_term_debt, source.long_term_debt_noncurrent,
         source.short_long_term_debt_total, source.other_current_liabilities,
         source.other_non_current_liabilities, source.total_shareholder_equity, source.treasury_stock,
-        source.retained_earnings, source.common_stock, source.common_stock_shares_outstanding
+        source.retained_earnings, source.common_stock, source.common_stock_shares_outstanding,
+        CURRENT_DATE()
     );
 
 -- 10) Final validation and reporting
