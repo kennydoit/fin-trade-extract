@@ -104,6 +104,7 @@ FROM (
     FROM @TIME_SERIES_STAGE
 )
 PATTERN = '.*\.csv'
+PARALLEL = 16
 ON_ERROR = CONTINUE;
 
 -- Debug: Check staging data load

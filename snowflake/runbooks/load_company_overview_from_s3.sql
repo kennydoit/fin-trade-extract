@@ -85,6 +85,7 @@ FROM @COMPANY_OVERVIEW_STAGE
 FILE_FORMAT = COMPANY_OVERVIEW_CSV_FORMAT
 MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
 PATTERN = 'overview_.*\\.csv'
+PARALLEL = 16
 ON_ERROR = CONTINUE;
 
 -- Update source_file column with actual filenames after the load  

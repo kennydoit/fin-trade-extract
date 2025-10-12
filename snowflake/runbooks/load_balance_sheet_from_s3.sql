@@ -240,6 +240,7 @@ FROM (
 )
 FILE_FORMAT = (TYPE = 'CSV' SKIP_HEADER = 1)
 PATTERN = '.*\.csv'
+PARALLEL = 16
 ON_ERROR = CONTINUE;
 
 -- Debug: Check staging data load

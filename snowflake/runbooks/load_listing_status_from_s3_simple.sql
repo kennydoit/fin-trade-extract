@@ -47,6 +47,7 @@ FROM (
 )
 FILE_FORMAT = (FORMAT_NAME = FIN_TRADE_EXTRACT.RAW.RAW_CSV_FORMAT)
 PATTERN = '.*\\.csv'
+PARALLEL = 16
 ON_ERROR = CONTINUE;
 
 -- Debug: Check how many rows were loaded from each file
