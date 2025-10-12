@@ -1,0 +1,116 @@
+name: Cash Flow Watermark ETL
+
+on:
+  workflow_dispatch:
+    inputs:
+      exchange_filter:
+        description: 'Exchange to filter (e.g., NASDAQ, NYSE, or leave blank for all)'
+        required: false
+        type: string
+      max_symbols:
+        description: 'Maximum number of symbols to process (leave blank for all)'
+        required: false
+        type: string
+      skip_recent_hours:
+        description: 'Skip symbols processed in the last N hours (leave blank to process all eligible)'
+        required: false
+        type: string
+  schedule:
+    # Run weekly on Sunday at 3 AM UTC (fundamentals don't change daily)
+    - cron: '0 3 * * 0'
+
+jobs:
+  cash-flow-etl:
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests boto3 snowflake-connector-python
+      
+      - name: Run Cash Flow Watermark ETL
+        env:
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_CASH_FLOW_PREFIX: 'cash_flow/'
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_DATABASE: 'FIN_TRADE_EXTRACT'
+          SNOWFLAKE_SCHEMA: 'RAW'
+          SNOWFLAKE_WAREHOUSE: 'FIN_TRADE_WH'
+          EXCHANGE_FILTER: ${{ github.event.inputs.exchange_filter }}
+          MAX_SYMBOLS: ${{ github.event.inputs.max_symbols }}
+          SKIP_RECENT_HOURS: ${{ github.event.inputs.skip_recent_hours }}
+        run: |
+          echo "🚀 Starting Cash Flow Watermark ETL..."
+          echo "Exchange Filter: ${{ github.event.inputs.exchange_filter || 'ALL' }}"
+          echo "Max Symbols: ${{ github.event.inputs.max_symbols || 'ALL' }}"
+          echo "Skip Recent Hours: ${{ github.event.inputs.skip_recent_hours || 'NONE' }}"
+          python scripts/github_actions/fetch_cash_flow_watermark.py
+      
+      - name: Load Cash Flow Data to Snowflake
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        run: |
+          echo "📊 Loading cash flow data from S3 to Snowflake..."
+          pip install snowflake-connector-python
+          python -c "
+          import snowflake.connector
+          import os
+          
+          # Read SQL file
+          with open('snowflake/load_cash_flow_from_s3.sql', 'r') as f:
+              sql_content = f.read()
+          
+          # Connect to Snowflake
+          conn = snowflake.connector.connect(
+              account=os.environ['SNOWFLAKE_ACCOUNT'],
+              user=os.environ['SNOWFLAKE_USER'],
+              password=os.environ['SNOWFLAKE_PASSWORD']
+          )
+          
+          cursor = conn.cursor()
+          
+          # Execute SQL statements
+          for statement in sql_content.split(';'):
+              statement = statement.strip()
+              if statement and not statement.startswith('--'):
+                  try:
+                      cursor.execute(statement)
+                      # Fetch results if any
+                      if cursor.description:
+                          results = cursor.fetchall()
+                          if results:
+                              for row in results:
+                                  print(row)
+                  except Exception as e:
+                      print(f'Error executing statement: {e}')
+                      print(f'Statement: {statement[:100]}...')
+          
+          cursor.close()
+          conn.close()
+          print('✅ Cash flow data loaded successfully!')
+          "
+      
+      - name: Upload ETL results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: cash-flow-etl-results
+          path: /tmp/watermark_etl_results.json
+          retention-days: 30
