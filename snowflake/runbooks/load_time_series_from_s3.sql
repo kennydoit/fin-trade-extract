@@ -104,8 +104,9 @@ FROM (
     FROM @TIME_SERIES_STAGE
 )
 PATTERN = '.*\.csv'
-PARALLEL = 16
 ON_ERROR = CONTINUE;
+-- Note: PARALLEL parameter not supported for external stages (S3)
+-- Snowflake automatically parallelizes based on number of files
 
 -- Debug: Check staging data load
 SELECT COUNT(*) as staging_rows_loaded FROM FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGING;

@@ -85,8 +85,9 @@ FROM @COMPANY_OVERVIEW_STAGE
 FILE_FORMAT = COMPANY_OVERVIEW_CSV_FORMAT
 MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
 PATTERN = 'overview_.*\\.csv'
-PARALLEL = 16
 ON_ERROR = CONTINUE;
+-- Note: PARALLEL parameter not supported for external stages (S3)
+-- Snowflake automatically parallelizes based on number of files
 
 -- Update source_file column with actual filenames after the load  
 UPDATE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
