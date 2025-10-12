@@ -157,7 +157,8 @@ class WatermarkETLManager:
             last_date: Most recent date in the data (YYYY-MM-DD)
             success: Whether processing was successful
         """
-        self.connect()
+        if not self.connection:
+            raise RuntimeError("❌ No active Snowflake connection. Call connect() first.")
         
         cursor = self.connection.cursor()
         
@@ -190,8 +191,8 @@ class WatermarkETLManager:
             """
         
         cursor.execute(update_sql)
-        self.connection.commit()
         cursor.close()
+        # Note: Commit is handled by caller to allow batching multiple updates
 
 
 class AlphaVantageRateLimiter:
@@ -482,8 +483,11 @@ def main():
     logger.info("=" * 60)
     
     watermark_manager = WatermarkETLManager(snowflake_config)
+    watermark_manager.connect()
+    
     try:
         # Update watermarks for successful symbols
+        logger.info(f"📝 Updating watermarks for {len(results['successful_updates'])} successful extractions...")
         for update_info in results['successful_updates']:
             watermark_manager.update_watermark(
                 update_info['symbol'],
@@ -494,8 +498,15 @@ def main():
         
         # Update watermarks for failed symbols
         failed_symbols = [d['symbol'] for d in results['details'] if d.get('status') == 'failed']
+        if failed_symbols:
+            logger.info(f"📝 Updating watermarks for {len(failed_symbols)} failed extractions...")
         for symbol in failed_symbols:
             watermark_manager.update_watermark(symbol, None, None, success=False)
+        
+        # Commit all updates at once (MUCH faster than individual commits)
+        logger.info("💾 Committing all watermark updates...")
+        watermark_manager.connection.commit()
+        logger.info("✅ All watermark updates committed")
         
         # Check how many delisted symbols were marked
         cursor = watermark_manager.connection.cursor()

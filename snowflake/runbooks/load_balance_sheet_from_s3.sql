@@ -40,8 +40,9 @@ CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGE
 LIST @BALANCE_SHEET_STAGE;
 
 -- 3) Create main table for balance sheet data
-DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET;
-CREATE TABLE FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET (
+-- ⚠️ CRITICAL: DO NOT DROP - Would delete all historical balance sheet data!
+-- DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET;
+CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET (
     SYMBOL_ID                                   NUMBER(38,0),
     SYMBOL                                      VARCHAR(20) NOT NULL,
     REPORT_TYPE                                 VARCHAR(20) NOT NULL, -- 'annual' or 'quarterly'

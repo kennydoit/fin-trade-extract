@@ -127,7 +127,8 @@ class WatermarkETLManager:
             last_date: Most recent fiscal date in the data (YYYY-MM-DD)
             success: Whether processing was successful
         """
-        self.connect()
+        if not self.connection:
+            raise RuntimeError("❌ No active Snowflake connection. Call connect() first.")
         
         cursor = self.connection.cursor()
         
@@ -160,8 +161,8 @@ class WatermarkETLManager:
             """
         
         cursor.execute(update_sql)
-        self.connection.commit()
         cursor.close()
+        # Note: Commit is handled by caller to allow batching multiple updates
 
 
 class AlphaVantageRateLimiter:
@@ -534,6 +535,11 @@ def main():
         results['end_time'] = datetime.now().isoformat()
         results['duration_minutes'] = (datetime.fromisoformat(results['end_time']) - 
                                       datetime.fromisoformat(results['start_time'])).total_seconds() / 60
+        
+        # Commit all watermark updates at once (MUCH faster than individual commits)
+        logger.info("💾 Committing all watermark updates...")
+        watermark_manager.connection.commit()
+        logger.info("✅ All watermark updates committed")
         
         # Check how many delisted symbols were marked
         cursor = watermark_manager.connection.cursor()
