@@ -147,6 +147,85 @@ class WatermarkETLManager:
         
         return symbols_to_process
     
+    def bulk_update_watermarks(self, successful_updates: List[Dict], failed_symbols: List[str]):
+        """
+        Bulk update watermarks using a single MERGE statement (MUCH faster than individual UPDATEs).
+        
+        Args:
+            successful_updates: List of dicts with {symbol, first_date, last_date}
+            failed_symbols: List of symbols that failed processing
+        """
+        if not self.connection:
+            raise RuntimeError("❌ No active Snowflake connection. Call connect() first.")
+        
+        cursor = self.connection.cursor()
+        
+        # Build VALUES clause for successful updates
+        if successful_updates:
+            logger.info(f"📝 Bulk updating {len(successful_updates)} successful watermarks...")
+            
+            # Create temporary table with updates
+            cursor.execute("""
+                CREATE TEMPORARY TABLE WATERMARK_UPDATES (
+                    SYMBOL VARCHAR(20),
+                    FIRST_DATE DATE,
+                    LAST_DATE DATE
+                )
+            """)
+            
+            # Build INSERT statement with all values
+            values_list = []
+            for update in successful_updates:
+                values_list.append(
+                    f"('{update['symbol']}', "
+                    f"TO_DATE('{update['first_date']}', 'YYYY-MM-DD'), "
+                    f"TO_DATE('{update['last_date']}', 'YYYY-MM-DD'))"
+                )
+            
+            # Insert all updates at once (batch insert is fast)
+            values_clause = ',\n'.join(values_list)
+            cursor.execute(f"""
+                INSERT INTO WATERMARK_UPDATES (SYMBOL, FIRST_DATE, LAST_DATE)
+                VALUES {values_clause}
+            """)
+            
+            # Single MERGE to update all watermarks at once
+            cursor.execute(f"""
+                MERGE INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS target
+                USING WATERMARK_UPDATES source
+                ON target.TABLE_NAME = '{self.table_name}'
+                   AND target.SYMBOL = source.SYMBOL
+                WHEN MATCHED THEN UPDATE SET
+                    FIRST_FISCAL_DATE = COALESCE(target.FIRST_FISCAL_DATE, source.FIRST_DATE),
+                    LAST_FISCAL_DATE = source.LAST_DATE,
+                    LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(),
+                    CONSECUTIVE_FAILURES = 0,
+                    API_ELIGIBLE = CASE 
+                        WHEN target.DELISTING_DATE IS NOT NULL AND target.DELISTING_DATE <= CURRENT_DATE() 
+                        THEN 'DEL'
+                        ELSE target.API_ELIGIBLE 
+                    END,
+                    UPDATED_AT = CURRENT_TIMESTAMP()
+            """)
+            
+            logger.info(f"✅ Bulk updated {len(successful_updates)} successful watermarks in single MERGE")
+        
+        # Handle failed symbols (much smaller batch, can use simple UPDATE with IN clause)
+        if failed_symbols:
+            logger.info(f"📝 Updating {len(failed_symbols)} failed watermarks...")
+            symbols_list = "', '".join(failed_symbols)
+            cursor.execute(f"""
+                UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+                SET 
+                    CONSECUTIVE_FAILURES = COALESCE(CONSECUTIVE_FAILURES, 0) + 1,
+                    UPDATED_AT = CURRENT_TIMESTAMP()
+                WHERE TABLE_NAME = '{self.table_name}'
+                  AND SYMBOL IN ('{symbols_list}')
+            """)
+            logger.info(f"✅ Updated {len(failed_symbols)} failed watermarks")
+        
+        cursor.close()
+    
     def update_watermark(self, symbol: str, first_date: str, last_date: str, success: bool = True):
         """
         Update watermark for a symbol after processing.
@@ -486,30 +565,14 @@ def main():
     watermark_manager.connect()
     
     try:
-        # Update watermarks for successful symbols
-        logger.info(f"📝 Updating watermarks for {len(results['successful_updates'])} successful extractions...")
-        for idx, update_info in enumerate(results['successful_updates'], 1):
-            watermark_manager.update_watermark(
-                update_info['symbol'],
-                update_info['first_date'],
-                update_info['last_date'],
-                success=True
-            )
-            # Progress logging every 100 updates
-            if idx % 100 == 0:
-                logger.info(f"   ⏳ Progress: {idx}/{len(results['successful_updates'])} watermarks updated...")
-        
-        # Update watermarks for failed symbols
+        # Bulk update all watermarks in a single MERGE statement (100x faster!)
         failed_symbols = [d['symbol'] for d in results['details'] if d.get('status') == 'failed']
-        if failed_symbols:
-            logger.info(f"📝 Updating watermarks for {len(failed_symbols)} failed extractions...")
-        for symbol in failed_symbols:
-            watermark_manager.update_watermark(symbol, None, None, success=False)
+        watermark_manager.bulk_update_watermarks(results['successful_updates'], failed_symbols)
         
-        # Commit all updates at once (MUCH faster than individual commits)
-        logger.info("💾 Committing all watermark updates...")
+        # Commit all updates at once
+        logger.info("💾 Committing watermark updates...")
         watermark_manager.connection.commit()
-        logger.info("✅ All watermark updates committed")
+        logger.info("✅ Watermark updates committed")
         
         # Check how many delisted symbols were marked
         cursor = watermark_manager.connection.cursor()
