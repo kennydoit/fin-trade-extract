@@ -488,13 +488,16 @@ def main():
     try:
         # Update watermarks for successful symbols
         logger.info(f"📝 Updating watermarks for {len(results['successful_updates'])} successful extractions...")
-        for update_info in results['successful_updates']:
+        for idx, update_info in enumerate(results['successful_updates'], 1):
             watermark_manager.update_watermark(
                 update_info['symbol'],
                 update_info['first_date'],
                 update_info['last_date'],
                 success=True
             )
+            # Progress logging every 100 updates
+            if idx % 100 == 0:
+                logger.info(f"   ⏳ Progress: {idx}/{len(results['successful_updates'])} watermarks updated...")
         
         # Update watermarks for failed symbols
         failed_symbols = [d['symbol'] for d in results['details'] if d.get('status') == 'failed']
