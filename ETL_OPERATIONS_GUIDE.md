@@ -20,6 +20,29 @@ This document outlines the rules, best practices, gotchas, and performance optim
 
 ## Watermark-Based ETL System
 
+### 🎯 Critical Concept: Watermarks Drive Everything
+
+**⚠️ THE MOST IMPORTANT RULE:**
+
+The `ETL_WATERMARKS` table is **THE SINGLE SOURCE OF TRUTH** for all ETL processing. 
+
+**Understanding this is critical:**
+- ✅ If a symbol exists in `ETL_WATERMARKS` with `API_ELIGIBLE='YES'` → It will be processed
+- ❌ If a symbol does NOT exist in `ETL_WATERMARKS` → It will be **completely ignored**
+- ❌ If `API_ELIGIBLE='NO'` or `'DEL'` → Symbol is **skipped** (even if data exists)
+
+**Before running ANY extraction workflow:**
+```sql
+-- ALWAYS verify watermarks exist first!
+SELECT COUNT(*) 
+FROM ETL_WATERMARKS 
+WHERE TABLE_NAME = 'YOUR_DATA_SOURCE' 
+  AND API_ELIGIBLE = 'YES';
+
+-- If count = 0, you MUST create watermarks first:
+-- Go to GitHub Actions → Run add_data_source_watermarks.yml workflow
+```
+
 ### ETL_WATERMARKS Table Structure
 
 The `ETL_WATERMARKS` table is the **single source of truth** for all ETL processing state.
@@ -292,6 +315,143 @@ FROM @S3_EXTERNAL_STAGE;
 - Snowflake auto-parallelizes external stage loads
 - Based on number of files in S3
 - 100 files = up to 100 parallel threads automatically
+
+### 🚨 RULE 6: Always Clean Up S3 Before Extraction
+
+**THE PROBLEM:**
+Snowflake's `COPY FROM s3://bucket/prefix/*.csv` loads **ALL** files matching the pattern. If old files remain from previous runs, they get loaded multiple times, causing duplicates.
+
+**CRITICAL PATTERN (All extraction scripts MUST do this):**
+```python
+def cleanup_s3_bucket(bucket: str, prefix: str, s3_client) -> int:
+    """
+    Delete ALL existing files in the S3 prefix before new extraction.
+    Handles >1000 files using pagination.
+    
+    Returns: Number of files deleted
+    """
+    logger.info(f"🧹 Cleaning up S3 bucket: s3://{bucket}/{prefix}")
+    
+    deleted_count = 0
+    continuation_token = None
+    
+    while True:
+        # List objects (handles pagination for >1000 files)
+        list_params = {'Bucket': bucket, 'Prefix': prefix}
+        if continuation_token:
+            list_params['ContinuationToken'] = continuation_token
+        
+        response = s3_client.list_objects_v2(**list_params)
+        
+        # Delete objects if any exist
+        if 'Contents' in response:
+            objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+            s3_client.delete_objects(
+                Bucket=bucket,
+                Delete={'Objects': objects_to_delete}
+            )
+            deleted_count += len(objects_to_delete)
+            logger.info(f"   Deleted {len(objects_to_delete)} files (total: {deleted_count})")
+        
+        # Check if there are more objects to list
+        if response.get('IsTruncated'):
+            continuation_token = response.get('NextContinuationToken')
+        else:
+            break
+    
+    logger.info(f"✅ S3 cleanup complete: {deleted_count} files deleted")
+    return deleted_count
+
+# STEP 1 of EVERY extraction workflow (before API calls)
+cleanup_s3_bucket(s3_bucket, s3_prefix, s3_client)
+```
+
+**Why Pagination Matters:**
+- S3 `list_objects_v2()` returns max 1,000 objects per call
+- Without pagination, files 1001+ won't be deleted
+- Old files = duplicate data in Snowflake
+
+**Standard S3 Prefixes:**
+- Time series: `time_series_daily_adjusted/`
+- Balance sheet: `balance_sheet/`
+- Company overview: `company_overview/`
+- Listing status: `listing_status/`
+
+### 🚨 RULE 7: Watermarks Table Drives ALL ETL Processing
+
+**⚠️ CRITICAL UNDERSTANDING:**
+
+The `ETL_WATERMARKS` table is **NOT** just metadata - it is the **gatekeeper** for the entire ETL system.
+
+**If a (TABLE_NAME, SYMBOL) combination does NOT exist in ETL_WATERMARKS:**
+- ❌ The symbol will NOT be extracted
+- ❌ No API calls will be made
+- ❌ No data will be loaded
+- ❌ The symbol is invisible to all workflows
+
+**Watermark Creation is MANDATORY:**
+
+```bash
+# Step 1: Create watermarks FIRST (before any extraction)
+# Run GitHub workflow: add_data_source_watermarks.yml
+# Select: BALANCE_SHEET (or your target data source)
+
+# Step 2: Verify watermarks were created
+SELECT COUNT(*) 
+FROM ETL_WATERMARKS 
+WHERE TABLE_NAME = 'BALANCE_SHEET' AND API_ELIGIBLE = 'YES';
+-- Should return ~2000-3000 symbols (active stocks)
+
+# Step 3: NOW you can run extraction
+# Run GitHub workflow: balance_sheet_watermark_etl.yml
+```
+
+**Common Mistake:**
+```python
+# ❌ WRONG: Running extraction without watermarks
+# Result: "No symbols to process" - workflows complete with 0 data
+
+# ✅ CORRECT: Always ensure watermarks exist first
+# Check: SELECT COUNT(*) FROM ETL_WATERMARKS WHERE TABLE_NAME = 'YOUR_DATA_SOURCE'
+# If count = 0, run add_data_source_watermarks.yml workflow first!
+```
+
+**Watermark Prerequisites by Data Source:**
+
+| Data Source | Prerequisite | API_ELIGIBLE Logic |
+|-------------|--------------|-------------------|
+| `LISTING_STATUS` | None (seed table) | All symbols = 'YES' |
+| `TIME_SERIES_DAILY_ADJUSTED` | LISTING_STATUS must exist | All symbols = 'YES' |
+| `COMPANY_OVERVIEW` | LISTING_STATUS must exist | Only ASSET_TYPE='Stock' = 'YES' |
+| `BALANCE_SHEET` | LISTING_STATUS must exist | Only ASSET_TYPE='Stock' AND STATUS='Active' = 'YES' |
+| `CASH_FLOW` | LISTING_STATUS must exist | Only ASSET_TYPE='Stock' AND STATUS='Active' = 'YES' |
+| `INCOME_STATEMENT` | LISTING_STATUS must exist | Only ASSET_TYPE='Stock' AND STATUS='Active' = 'YES' |
+
+**Watermark Lifecycle Summary:**
+1. **Create** watermarks from LISTING_STATUS (one-time setup per data source)
+2. **Query** watermarks to get symbols to process (every ETL run)
+3. **Update** watermarks after successful extraction (bulk MERGE, not row-by-row)
+4. **Mark delisted** symbols as `API_ELIGIBLE='DEL'` to save API quota
+
+**Re-processing Symbols:**
+```sql
+-- To re-process specific symbols, reset their watermarks:
+UPDATE ETL_WATERMARKS
+SET LAST_SUCCESSFUL_RUN = NULL,
+    FIRST_FISCAL_DATE = NULL,
+    LAST_FISCAL_DATE = NULL,
+    CONSECUTIVE_FAILURES = 0
+WHERE TABLE_NAME = 'BALANCE_SHEET' 
+  AND SYMBOL IN ('AAPL', 'MSFT', 'GOOGL');
+
+-- To re-process ALL symbols for a data source:
+UPDATE ETL_WATERMARKS
+SET LAST_SUCCESSFUL_RUN = NULL,
+    FIRST_FISCAL_DATE = NULL,
+    LAST_FISCAL_DATE = NULL,
+    CONSECUTIVE_FAILURES = 0
+WHERE TABLE_NAME = 'BALANCE_SHEET';
+```
 
 ---
 
