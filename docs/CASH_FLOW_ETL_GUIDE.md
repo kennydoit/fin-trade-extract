@@ -56,7 +56,7 @@ GitHub Actions → Cash Flow Watermark ETL workflow
 
 **First run:**
 - Processes all ~2,000-3,000 active stocks
-- Takes ~8-10 hours (75 API calls/min rate limit)
+- Takes ~30-40 minutes (75 API calls/min = 4,500 calls/hour)
 - Loads 50,000-100,000+ records (annual + quarterly reports)
 
 **Subsequent runs:**
@@ -177,15 +177,17 @@ LIMIT 10;
 
 ### Connection Management
 **Old approach:**
-- Open connection → query watermarks → keep open 2 hours during API extraction
-- Warehouse cost: 2 hours × $2.30/hour × 30 days = $138/month
+- Open connection → query watermarks → keep open 30-40 minutes during API extraction
+- Warehouse cost: 40 min × $2.30/hour × 30 days = $46/month
 
 **New approach:**
 - Open → query watermarks → CLOSE
-- Sleep 2 hours (API extraction, no warehouse running)
+- Sleep 30-40 minutes (API extraction, no warehouse running)
 - Open → bulk update watermarks → CLOSE
 - Warehouse cost: 5 minutes × $2.30/hour × 30 days = $5.75/month
-- **Savings: $132/month ($18-20/day)**
+- **Savings: $40/month ($1.35/day per run)**
+
+**Note:** The original $18-20/day savings was for TIME_SERIES_DAILY which runs daily with 1-2 hour extractions. CASH_FLOW runs weekly with 30-40 minute extractions, so savings are proportionally smaller but still significant!
 
 ## 🔧 Troubleshooting
 
