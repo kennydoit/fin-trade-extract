@@ -56,8 +56,9 @@ CREATE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING (
   LatestQuarter VARCHAR(500),
   
   -- Processing metadata (added by Python script)
-  SYMBOL_ID VARCHAR(500),
   PROCESSED_DATE VARCHAR(500),
+  -- NOTE: SYMBOL_ID is calculated during MERGE using Snowflake HASH(Symbol)
+  -- to ensure consistency with LISTING_STATUS and other watermarks
   
   -- File tracking (automatically added by Snowflake COPY command)
   source_file VARCHAR(500) DEFAULT NULL
@@ -149,7 +150,9 @@ LIMIT 8;
 -- Show processing metadata
 SELECT 'Processing metadata:' as MESSAGE;
 SELECT 
-    Symbol, SYMBOL_ID, PROCESSED_DATE,
+    Symbol, 
+    ABS(HASH(Symbol)) % 1000000000 as SYMBOL_ID_CALCULATED,
+    PROCESSED_DATE,
     source_file
 FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
 LIMIT 3;
@@ -170,7 +173,7 @@ FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
 MERGE INTO FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW AS target
 USING (
   SELECT 
-    TRY_TO_NUMBER(SYMBOL_ID) as SYMBOL_ID,
+    ABS(HASH(Symbol)) % 1000000000 as SYMBOL_ID,  -- Calculate using Snowflake HASH to match watermarks
     Symbol,
     AssetType as ASSET_TYPE,
     Name,
