@@ -383,96 +383,119 @@ def main():
         'warehouse': os.environ['SNOWFLAKE_WAREHOUSE']
     }
     
-    # Initialize managers
-    watermark_manager = WatermarkETLManager(snowflake_config)
-    rate_limiter = AlphaVantageRateLimiter()
+    # STEP 1: Clean up S3 bucket (no Snowflake connection needed)
+    logger.info("=" * 60)
+    logger.info("🧹 STEP 1: Clean up existing S3 files")
+    logger.info("=" * 60)
     s3_client = boto3.client('s3')
+    deleted_count = cleanup_s3_bucket(s3_bucket, s3_prefix, s3_client)
+    logger.info(f"✅ Cleanup complete: {deleted_count} old files removed")
+    logger.info("")
     
+    # STEP 2: Query watermarks - CLOSE connection immediately after
+    logger.info("=" * 60)
+    logger.info("🔍 STEP 2: Query watermarks for symbols to process")
+    logger.info("=" * 60)
+    
+    watermark_manager = WatermarkETLManager(snowflake_config)
     try:
-        # Clean up S3 bucket before extraction (critical for COPY FROM s3://.../*.csv)
-        logger.info("=" * 60)
-        logger.info("🧹 STEP 1: Clean up existing S3 files")
-        logger.info("=" * 60)
-        deleted_count = cleanup_s3_bucket(s3_bucket, s3_prefix, s3_client)
-        logger.info(f"✅ Cleanup complete: {deleted_count} old files removed")
-        logger.info("")
-        
-        # Get symbols to process from watermarks
-        logger.info("=" * 60)
-        logger.info("🔍 STEP 2: Query watermarks for symbols to process")
-        logger.info("=" * 60)
         symbols_to_process = watermark_manager.get_symbols_to_process(
             exchange_filter=exchange_filter,
             max_symbols=max_symbols,
             staleness_days=staleness_days,
             skip_recent_hours=skip_recent_hours
         )
+    finally:
+        # CRITICAL: Close Snowflake connection immediately after getting symbols
+        watermark_manager.close()
+        logger.info("🔌 Snowflake connection closed after watermark query")
+    
+    if not symbols_to_process:
+        logger.warning("⚠️  No symbols to process")
+        return
+    
+    logger.info("")
+    
+    # STEP 3: Extract from Alpha Vantage (NO Snowflake connection - prevents idle warehouse costs)
+    logger.info("=" * 60)
+    logger.info("🚀 STEP 3: Extract time series data from Alpha Vantage")
+    logger.info("=" * 60)
+    
+    rate_limiter = AlphaVantageRateLimiter()
+    
+    results = {
+        'total_symbols': len(symbols_to_process),
+        'successful': 0,
+        'failed': 0,
+        'start_time': datetime.now().isoformat(),
+        'details': [],
+        'successful_updates': []
+    }
+    
+    for i, symbol_info in enumerate(symbols_to_process, 1):
+        symbol = symbol_info['symbol']
+        mode = symbol_info['processing_mode']
+        output_size = 'full' if mode == 'full' else 'compact'
         
-        if not symbols_to_process:
-            logger.warning("⚠️  No symbols to process")
-            return
+        logger.info(f"📊 [{i}/{len(symbols_to_process)}] Processing {symbol} ({mode} mode)...")
         
-        logger.info("")
+        # Rate limit
+        rate_limiter.wait_if_needed()
         
-        # Process symbols in batches
-        logger.info("=" * 60)
-        logger.info("🚀 STEP 3: Extract time series data from Alpha Vantage")
-        logger.info("=" * 60)
+        # Fetch data
+        data = fetch_time_series_data(symbol, api_key, output_size)
         
-        results = {
-            'total_symbols': len(symbols_to_process),
-            'successful': 0,
-            'failed': 0,
-            'start_time': datetime.now().isoformat(),
-            'details': []
-        }
-        
-        for i, symbol_info in enumerate(symbols_to_process, 1):
-            symbol = symbol_info['symbol']
-            mode = symbol_info['processing_mode']
-            output_size = 'full' if mode == 'full' else 'compact'
-            
-            logger.info(f"📊 [{i}/{len(symbols_to_process)}] Processing {symbol} ({mode} mode)...")
-            
-            # Rate limit
-            rate_limiter.wait_if_needed()
-            
-            # Fetch data
-            data = fetch_time_series_data(symbol, api_key, output_size)
-            
-            if data:
-                # Upload to S3
-                if upload_to_s3(data, s3_client, s3_bucket, s3_prefix):
-                    # Update watermark on success
-                    watermark_manager.update_watermark(
-                        symbol,
-                        data['first_date'],
-                        data['last_date'],
-                        success=True
-                    )
-                    results['successful'] += 1
-                    results['details'].append({
-                        'symbol': symbol,
-                        'status': 'success',
-                        'mode': mode,
-                        'records': data['record_count']
-                    })
-                else:
-                    watermark_manager.update_watermark(symbol, None, None, success=False)
-                    results['failed'] += 1
-            else:
-                watermark_manager.update_watermark(symbol, None, None, success=False)
-                results['failed'] += 1
+        if data:
+            # Upload to S3
+            if upload_to_s3(data, s3_client, s3_bucket, s3_prefix):
+                results['successful'] += 1
                 results['details'].append({
                     'symbol': symbol,
-                    'status': 'failed',
-                    'mode': mode
+                    'status': 'success',
+                    'mode': mode,
+                    'records': data['record_count']
                 })
+                # Store successful symbols for watermark update
+                results['successful_updates'].append({
+                    'symbol': symbol,
+                    'first_date': data['first_date'],
+                    'last_date': data['last_date']
+                })
+            else:
+                results['failed'] += 1
+        else:
+            results['failed'] += 1
+            results['details'].append({
+                'symbol': symbol,
+                'status': 'failed',
+                'mode': mode
+            })
+    
+    results['end_time'] = datetime.now().isoformat()
+    results['duration_minutes'] = (datetime.fromisoformat(results['end_time']) - 
+                                  datetime.fromisoformat(results['start_time'])).total_seconds() / 60
+    
+    # STEP 4: Open NEW Snowflake connection to update watermarks
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("🔄 STEP 4: Update watermarks for successful extractions")
+    logger.info("=" * 60)
+    
+    watermark_manager = WatermarkETLManager(snowflake_config)
+    try:
+        # Update watermarks for successful symbols
+        for update_info in results['successful_updates']:
+            watermark_manager.update_watermark(
+                update_info['symbol'],
+                update_info['first_date'],
+                update_info['last_date'],
+                success=True
+            )
         
-        # Save results
-        results['end_time'] = datetime.now().isoformat()
-        results['duration_minutes'] = (datetime.fromisoformat(results['end_time']) - 
-                                      datetime.fromisoformat(results['start_time'])).total_seconds() / 60
+        # Update watermarks for failed symbols
+        failed_symbols = [d['symbol'] for d in results['details'] if d.get('status') == 'failed']
+        for symbol in failed_symbols:
+            watermark_manager.update_watermark(symbol, None, None, success=False)
         
         # Check how many delisted symbols were marked
         cursor = watermark_manager.connection.cursor()
@@ -486,17 +509,20 @@ def main():
         cursor.close()
         results['delisted_marked'] = delisted_count
         
-        with open('/tmp/watermark_etl_results.json', 'w') as f:
-            json.dump(results, f, indent=2)
-        
-        logger.info("🎉 ETL processing complete!")
-        logger.info(f"✅ Successful: {results['successful']}/{results['total_symbols']}")
-        logger.info(f"❌ Failed: {results['failed']}/{results['total_symbols']}")
-        if delisted_count > 0:
-            logger.info(f"🔒 Delisted symbols marked as 'DEL': {delisted_count}")
-        
     finally:
         watermark_manager.close()
+        logger.info("🔌 Snowflake connection closed after watermark updates")
+    
+    # Save results
+    with open('/tmp/watermark_etl_results.json', 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    logger.info("")
+    logger.info("🎉 ETL processing complete!")
+    logger.info(f"✅ Successful: {results['successful']}/{results['total_symbols']}")
+    logger.info(f"❌ Failed: {results['failed']}/{results['total_symbols']}")
+    if delisted_count > 0:
+        logger.info(f"🔒 Delisted symbols marked as 'DEL': {delisted_count}")
 
 
 if __name__ == '__main__':
