@@ -311,30 +311,90 @@ def fetch_income_statement(symbol: str, api_key: str, rate_limiter: RateLimiter)
 def upload_to_s3(symbol: str, data: Dict, s3_client, bucket: str, prefix: str) -> bool:
     """Upload income statement data to S3 as CSV."""
     try:
-        # Combine annual and quarterly reports
-        all_reports = []
-        
-        for report in data.get('annualReports', []):
-            row = {'symbol': symbol, 'period_type': 'annual'}
-            row.update(report)
-            all_reports.append(row)
-        
-        for report in data.get('quarterlyReports', []):
-            row = {'symbol': symbol, 'period_type': 'quarterly'}
-            row.update(report)
-            all_reports.append(row)
-        
-        if not all_reports:
-            logger.warning(f"⚠️  No reports to upload for {symbol}")
-            return False
+        # Define CSV columns with explicit mapping
+        fieldnames = [
+            'symbol', 'fiscal_date_ending', 'period_type', 'reported_currency',
+            'gross_profit', 'total_revenue', 'cost_of_revenue', 'cost_of_goods_and_services_sold',
+            'operating_income', 'selling_general_and_administrative', 'research_and_development',
+            'operating_expenses', 'investment_income_net', 'net_interest_income', 'interest_income',
+            'interest_expense', 'non_interest_income', 'other_non_operating_income',
+            'depreciation', 'depreciation_and_amortization', 'income_before_tax',
+            'income_tax_expense', 'interest_and_debt_expense', 'net_income_from_continuing_operations',
+            'comprehensive_income_net_of_tax', 'ebit', 'ebitda', 'net_income'
+        ]
         
         # Convert to CSV
         output = StringIO()
-        if all_reports:
-            fieldnames = list(all_reports[0].keys())
-            writer = csv.DictWriter(output, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(all_reports)
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        
+        # Write annual reports with explicit field mapping
+        for report in data.get('annualReports', []):
+            row = {
+                'symbol': symbol,
+                'fiscal_date_ending': report.get('fiscalDateEnding'),
+                'period_type': 'annual',
+                'reported_currency': report.get('reportedCurrency'),
+                'gross_profit': report.get('grossProfit'),
+                'total_revenue': report.get('totalRevenue'),
+                'cost_of_revenue': report.get('costOfRevenue'),
+                'cost_of_goods_and_services_sold': report.get('costofGoodsAndServicesSold'),
+                'operating_income': report.get('operatingIncome'),
+                'selling_general_and_administrative': report.get('sellingGeneralAndAdministrative'),
+                'research_and_development': report.get('researchAndDevelopment'),
+                'operating_expenses': report.get('operatingExpenses'),
+                'investment_income_net': report.get('investmentIncomeNet'),
+                'net_interest_income': report.get('netInterestIncome'),
+                'interest_income': report.get('interestIncome'),
+                'interest_expense': report.get('interestExpense'),
+                'non_interest_income': report.get('nonInterestIncome'),
+                'other_non_operating_income': report.get('otherNonOperatingIncome'),
+                'depreciation': report.get('depreciation'),
+                'depreciation_and_amortization': report.get('depreciationAndAmortization'),
+                'income_before_tax': report.get('incomeBeforeTax'),
+                'income_tax_expense': report.get('incomeTaxExpense'),
+                'interest_and_debt_expense': report.get('interestAndDebtExpense'),
+                'net_income_from_continuing_operations': report.get('netIncomeFromContinuingOperations'),
+                'comprehensive_income_net_of_tax': report.get('comprehensiveIncomeNetOfTax'),
+                'ebit': report.get('ebit'),
+                'ebitda': report.get('ebitda'),
+                'net_income': report.get('netIncome')
+            }
+            writer.writerow(row)
+        
+        # Write quarterly reports with explicit field mapping
+        for report in data.get('quarterlyReports', []):
+            row = {
+                'symbol': symbol,
+                'fiscal_date_ending': report.get('fiscalDateEnding'),
+                'period_type': 'quarterly',
+                'reported_currency': report.get('reportedCurrency'),
+                'gross_profit': report.get('grossProfit'),
+                'total_revenue': report.get('totalRevenue'),
+                'cost_of_revenue': report.get('costOfRevenue'),
+                'cost_of_goods_and_services_sold': report.get('costofGoodsAndServicesSold'),
+                'operating_income': report.get('operatingIncome'),
+                'selling_general_and_administrative': report.get('sellingGeneralAndAdministrative'),
+                'research_and_development': report.get('researchAndDevelopment'),
+                'operating_expenses': report.get('operatingExpenses'),
+                'investment_income_net': report.get('investmentIncomeNet'),
+                'net_interest_income': report.get('netInterestIncome'),
+                'interest_income': report.get('interestIncome'),
+                'interest_expense': report.get('interestExpense'),
+                'non_interest_income': report.get('nonInterestIncome'),
+                'other_non_operating_income': report.get('otherNonOperatingIncome'),
+                'depreciation': report.get('depreciation'),
+                'depreciation_and_amortization': report.get('depreciationAndAmortization'),
+                'income_before_tax': report.get('incomeBeforeTax'),
+                'income_tax_expense': report.get('incomeTaxExpense'),
+                'interest_and_debt_expense': report.get('interestAndDebtExpense'),
+                'net_income_from_continuing_operations': report.get('netIncomeFromContinuingOperations'),
+                'comprehensive_income_net_of_tax': report.get('comprehensiveIncomeNetOfTax'),
+                'ebit': report.get('ebit'),
+                'ebitda': report.get('ebitda'),
+                'net_income': report.get('netIncome')
+            }
+            writer.writerow(row)
         
         # Upload to S3
         csv_content = output.getvalue()
@@ -347,7 +407,8 @@ def upload_to_s3(symbol: str, data: Dict, s3_client, bucket: str, prefix: str) -
             ContentType='text/csv'
         )
         
-        logger.info(f"✅ Uploaded: s3://{bucket}/{s3_key} ({len(all_reports)} reports)")
+        total_reports = len(data.get('annualReports', [])) + len(data.get('quarterlyReports', []))
+        logger.info(f"✅ Uploaded: s3://{bucket}/{s3_key} ({total_reports} reports)")
         return True
     
     except Exception as e:
