@@ -22,6 +22,12 @@ on:
 jobs:
   cash-flow-etl:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360  # 6 hours max
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PYTHONUNBUFFERED: '1'
     
     steps:
       - name: Checkout repository
@@ -37,12 +43,16 @@ jobs:
           pip install --upgrade pip
           pip install requests boto3 snowflake-connector-python
       
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      
       - name: Run Cash Flow Watermark ETL
         env:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
           S3_BUCKET: fin-trade-craft-landing
           S3_CASH_FLOW_PREFIX: 'cash_flow/'
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
