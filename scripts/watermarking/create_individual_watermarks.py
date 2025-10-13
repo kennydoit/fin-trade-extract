@@ -112,6 +112,29 @@ WATERMARK_TEMPLATES = {
               );
         """
     },
+    'INCOME_STATEMENT': {
+        'description': 'Income statement financial statements',
+        'eligibility': "Active common stocks only",
+        'sql': """
+            INSERT INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS 
+                (TABLE_NAME, SYMBOL_ID, SYMBOL, NAME, EXCHANGE, ASSET_TYPE, STATUS, API_ELIGIBLE, 
+                 IPO_DATE, DELISTING_DATE, CREATED_AT, UPDATED_AT)
+            SELECT 
+                'INCOME_STATEMENT' as TABLE_NAME,
+                SYMBOL_ID, SYMBOL, NAME, EXCHANGE, ASSET_TYPE, STATUS,
+                CASE WHEN UPPER(ASSET_TYPE) = 'STOCK' AND UPPER(STATUS) = 'ACTIVE' THEN 'YES' ELSE 'NO' END as API_ELIGIBLE,
+                IPO_DATE, DELISTING_DATE,
+                CURRENT_TIMESTAMP() as CREATED_AT,
+                CURRENT_TIMESTAMP() as UPDATED_AT
+            FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+            WHERE TABLE_NAME = 'LISTING_STATUS'
+              AND NOT EXISTS (
+                  SELECT 1 FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS w2
+                  WHERE w2.TABLE_NAME = 'INCOME_STATEMENT'
+                    AND w2.SYMBOL_ID = ETL_WATERMARKS.SYMBOL_ID
+              );
+        """
+    },
     # Add more as needed...
 }
 
