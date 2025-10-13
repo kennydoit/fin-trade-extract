@@ -218,8 +218,7 @@ ORDER BY PERIOD_TYPE;
 -- Step 8: Preview staging data
 SELECT * FROM BALANCE_SHEET_STAGING LIMIT 10;
 
--- Step 9: MERGE staging data into target table
--- Using CTE to avoid identifier scope issues
+-- Step 9: MERGE staging data into target table (using CTE to avoid identifier scope issues)
 WITH source_data AS (
     SELECT 
         SYMBOL,
