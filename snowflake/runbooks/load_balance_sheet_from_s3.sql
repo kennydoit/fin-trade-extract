@@ -260,12 +260,10 @@ USING (
         TRY_TO_NUMBER(s.COMMON_STOCK_SHARES_OUTSTANDING, 38, 0) AS COMMON_STOCK_SHARES_OUTSTANDING,
         
         -- Metadata
-        sym.SYMBOL_ID,
+        NULL AS SYMBOL_ID,  -- Will be populated later when SYMBOL table is available
         CURRENT_TIMESTAMP() AS LOAD_DATE
         
     FROM BALANCE_SHEET_STAGING s
-    LEFT JOIN FIN_TRADE_EXTRACT.RAW.SYMBOL sym 
-        ON s.SYMBOL = sym.SYMBOL
     WHERE TRY_TO_DATE(s.FISCAL_DATE_ENDING) IS NOT NULL
       AND s.SYMBOL IS NOT NULL
       AND s.PERIOD_TYPE IN ('annual', 'quarterly')
