@@ -192,6 +192,8 @@ def fetch_insider_transactions_data(symbol: str, api_key: str) -> Optional[List[
         
         if not response.text.strip() or "transactionDate" not in response.text:
             logger.warning(f"⚠️  No insider transactions data for {symbol}")
+            # Add detailed logging for debugging
+            logger.info(f"📦 Raw response for {symbol} (first 500 chars): {response.text[:500]}")
             return None
 
         csv_reader = csv.DictReader(StringIO(response.text))
