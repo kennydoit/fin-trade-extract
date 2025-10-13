@@ -57,9 +57,6 @@ class WatermarkETLManager:
         Applies 135-day staleness check: Only fetch if LAST_FISCAL_DATE is NULL
         or older than 135 days (quarterly data + 45-day filing grace period).
         """
-        if not self.connection:
-            raise RuntimeError("❌ No active Snowflake connection. Call connect() first.")
-        
         self.connect()
         
         query = f"""
