@@ -3,7 +3,133 @@
 ## 🎯 Overview
 Complete watermark-based ETL for CASH_FLOW data, replicated from the successful BALANCE_SHEET workflow.
 
-## 📊 Features
+## � Prerequisites & Required Secrets
+
+### GitHub Secrets Required
+The workflow requires the following secrets to be configured in your GitHub repository:
+
+**Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret Name | Description | Example Value |
+|------------|-------------|---------------|
+| `ALPHAVANTAGE_API_KEY` | Alpha Vantage API key | `YOUR_API_KEY_HERE` |
+| `AWS_ROLE_TO_ASSUME` | AWS IAM Role ARN for OIDC | `arn:aws:iam::123456789012:role/GitHubActionsRole` |
+| `AWS_REGION` | AWS region for S3 bucket | `us-east-1` |
+| `SNOWFLAKE_ACCOUNT` | Snowflake account identifier | `abc12345.us-east-1` |
+| `SNOWFLAKE_USER` | Snowflake username | `ETL_USER` |
+| `SNOWFLAKE_PASSWORD` | Snowflake password | `your_password` |
+| `SNOWFLAKE_WAREHOUSE` | Snowflake warehouse name | `FIN_TRADE_WH` |
+| `SNOWFLAKE_DATABASE` | Snowflake database name | `FIN_TRADE_EXTRACT` |
+| `SNOWFLAKE_SCHEMA` | Snowflake schema name | `RAW` |
+
+### Hardcoded Configuration
+These values are configured directly in the workflow (not secrets):
+
+| Parameter | Value | Location |
+|-----------|-------|----------|
+| `S3_BUCKET` | `fin-trade-craft-landing` | Workflow YAML |
+| `S3_CASH_FLOW_PREFIX` | `cash_flow/` | Workflow YAML |
+| Python Version | `3.11` | Workflow YAML |
+| Runner | `ubuntu-22.04` | Workflow YAML |
+| Timeout | `360 minutes` (6 hours) | Workflow YAML |
+
+### AWS OIDC Authentication Setup
+The workflow uses **OpenID Connect (OIDC)** for secure AWS authentication without storing access keys:
+
+1. **Create IAM Role** with trust policy for GitHub:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:YOUR_GITHUB_USERNAME/fin-trade-extract:*"
+        }
+      }
+    }
+  ]
+}
+```
+
+2. **Attach S3 Policy** to the role:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:ListBucket",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::fin-trade-craft-landing/*",
+        "arn:aws:s3:::fin-trade-craft-landing"
+      ]
+    }
+  ]
+}
+```
+
+3. **Add Role ARN** to GitHub secrets as `AWS_ROLE_TO_ASSUME`
+
+### Alpha Vantage API Setup
+1. Sign up at https://www.alphavantage.co/support/#api-key
+2. Free tier: 25 requests/day, 5 requests/minute
+3. **Premium tier recommended**: 75 requests/minute (required for this workflow)
+4. Add API key to GitHub secrets as `ALPHAVANTAGE_API_KEY`
+
+### Snowflake Setup
+1. **Database & Schema** must exist:
+```sql
+CREATE DATABASE IF NOT EXISTS FIN_TRADE_EXTRACT;
+CREATE SCHEMA IF NOT EXISTS FIN_TRADE_EXTRACT.RAW;
+```
+
+2. **Warehouse** must exist:
+```sql
+CREATE WAREHOUSE IF NOT EXISTS FIN_TRADE_WH 
+  WITH WAREHOUSE_SIZE = 'X-SMALL' 
+  AUTO_SUSPEND = 60 
+  AUTO_RESUME = TRUE;
+```
+
+3. **User & Role** with permissions:
+```sql
+CREATE USER IF NOT EXISTS ETL_USER PASSWORD = 'your_password';
+CREATE ROLE IF NOT EXISTS ETL_ROLE;
+
+GRANT USAGE ON DATABASE FIN_TRADE_EXTRACT TO ROLE ETL_ROLE;
+GRANT USAGE ON SCHEMA FIN_TRADE_EXTRACT.RAW TO ROLE ETL_ROLE;
+GRANT CREATE TABLE ON SCHEMA FIN_TRADE_EXTRACT.RAW TO ROLE ETL_ROLE;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA FIN_TRADE_EXTRACT.RAW TO ROLE ETL_ROLE;
+GRANT USAGE ON WAREHOUSE FIN_TRADE_WH TO ROLE ETL_ROLE;
+
+GRANT ROLE ETL_ROLE TO USER ETL_USER;
+```
+
+4. **Storage Integration** for S3:
+```sql
+CREATE STORAGE INTEGRATION FIN_TRADE_S3_INTEGRATION
+  TYPE = EXTERNAL_STAGE
+  STORAGE_PROVIDER = S3
+  ENABLED = TRUE
+  STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::YOUR_ACCOUNT_ID:role/SnowflakeS3Role'
+  STORAGE_ALLOWED_LOCATIONS = ('s3://fin-trade-craft-landing/');
+```
+
+## �📊 Features
 - ✅ **Watermark-based extraction** - Only fetches when needed
 - ✅ **135-day staleness logic** - Saves 99.3% of API calls (quarterly data doesn't change daily!)
 - ✅ **Connection management** - Closes Snowflake connection during API extraction (saves $18-20/day)
