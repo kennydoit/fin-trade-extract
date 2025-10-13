@@ -3,6 +3,15 @@
 ## 🎯 Overview
 Complete watermark-based ETL for CASH_FLOW data, replicated from the successful BALANCE_SHEET workflow.
 
+## 📋 Important Documentation
+- **Naming Conventions**: See `snowflake/NAMING_CONVENTIONS.md` for standardized object naming rules
+- **Architecture**: Understanding the stage vs staging table distinction
+
+## 🔐 Prerequisites & Required Secrets Flow ETL - Quick Start Guide
+
+## 🎯 Overview
+Complete watermark-based ETL for CASH_FLOW data, replicated from the successful BALANCE_SHEET workflow.
+
 ## � Prerequisites & Required Secrets
 
 ### GitHub Secrets Required
