@@ -219,8 +219,8 @@ ORDER BY PERIOD_TYPE;
 SELECT * FROM BALANCE_SHEET_STAGING LIMIT 10;
 
 -- Step 9: MERGE staging data into target table
-MERGE INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET AS target
-USING (
+-- Using CTE to avoid identifier scope issues
+WITH source_data AS (
     SELECT 
         SYMBOL,
         TRY_TO_DATE(FISCAL_DATE_ENDING) AS FISCAL_DATE_ENDING,
@@ -275,7 +275,9 @@ USING (
     WHERE TRY_TO_DATE(FISCAL_DATE_ENDING) IS NOT NULL
       AND SYMBOL IS NOT NULL
       AND PERIOD_TYPE IN ('annual', 'quarterly')
-) source
+)
+MERGE INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET AS target
+USING source_data AS source
 ON target.SYMBOL = source.SYMBOL 
    AND target.FISCAL_DATE_ENDING = source.FISCAL_DATE_ENDING
    AND target.PERIOD_TYPE = source.PERIOD_TYPE
