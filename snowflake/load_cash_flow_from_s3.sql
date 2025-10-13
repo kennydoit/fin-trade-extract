@@ -87,8 +87,8 @@ CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.CASH_FLOW (
 COMMENT ON TABLE FIN_TRADE_EXTRACT.RAW.CASH_FLOW IS 
 'Cash flow statement data from Alpha Vantage. Contains both annual and quarterly cash flow metrics including operating, investing, and financing activities. Updated via watermark-based ETL.';
 
--- Step 4: Create a temporary table for staging data from S3
-CREATE OR REPLACE TEMPORARY TABLE CASH_FLOW_STAGE (
+-- Step 4: Create a transient staging table for loading data from S3
+CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE (
     SYMBOL VARCHAR(20),
     FISCAL_DATE_ENDING VARCHAR(50),
     PERIOD_TYPE VARCHAR(20),
@@ -123,7 +123,7 @@ CREATE OR REPLACE TEMPORARY TABLE CASH_FLOW_STAGE (
 );
 
 -- Step 5: Copy data from S3 to staging table
-COPY INTO CASH_FLOW_STAGE
+COPY INTO FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE
 FROM @FIN_TRADE_EXTRACT.RAW.S3_CASH_FLOW_STAGE
 FILE_FORMAT = (
     TYPE = 'CSV'
@@ -147,24 +147,24 @@ SELECT
     COUNT(CASE WHEN PERIOD_TYPE = 'quarterly' THEN 1 END) as quarterly_reports,
     MIN(TRY_TO_DATE(FISCAL_DATE_ENDING, 'YYYY-MM-DD')) as earliest_date,
     MAX(TRY_TO_DATE(FISCAL_DATE_ENDING, 'YYYY-MM-DD')) as latest_date
-FROM CASH_FLOW_STAGE;
+FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE;
 
 -- Step 7: Data quality checks
 SELECT 'Data Quality Check - Missing Keys' as check_type,
        COUNT(*) as issues
-FROM CASH_FLOW_STAGE
+FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE
 WHERE SYMBOL IS NULL 
    OR FISCAL_DATE_ENDING IS NULL
    OR PERIOD_TYPE IS NULL;
 
 SELECT 'Data Quality Check - Invalid Dates' as check_type,
        COUNT(*) as issues
-FROM CASH_FLOW_STAGE
+FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE
 WHERE TRY_TO_DATE(FISCAL_DATE_ENDING, 'YYYY-MM-DD') IS NULL;
 
 SELECT 'Data Quality Check - Invalid Period Types' as check_type,
        COUNT(*) as issues
-FROM CASH_FLOW_STAGE
+FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE
 WHERE PERIOD_TYPE NOT IN ('annual', 'quarterly');
 
 -- Step 8: Show sample of staged data
@@ -176,7 +176,7 @@ SELECT 'Sample Staged Data' as step,
        CASHFLOW_FROM_INVESTMENT,
        CASHFLOW_FROM_FINANCING,
        NET_INCOME
-FROM CASH_FLOW_STAGE
+FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE
 LIMIT 5;
 
 -- Step 9: Merge staged data into target table
@@ -227,7 +227,7 @@ USING (
         ABS(HASH(SYMBOL)) % 1000000000 as SYMBOL_ID,
         CURRENT_DATE() as LOAD_DATE
         
-    FROM CASH_FLOW_STAGE
+    FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE
     WHERE SYMBOL IS NOT NULL
       AND FISCAL_DATE_ENDING IS NOT NULL
       AND PERIOD_TYPE IS NOT NULL
@@ -327,6 +327,6 @@ ORDER BY SYMBOL, FISCAL_DATE_ENDING DESC, PERIOD_TYPE
 LIMIT 10;
 
 -- Cleanup staging table
-DROP TABLE IF EXISTS CASH_FLOW_STAGE;
+DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE;
 
 SELECT '✅ Cash flow data load complete!' as status;

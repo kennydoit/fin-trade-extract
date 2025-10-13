@@ -4,23 +4,34 @@ on:
   workflow_dispatch:
     inputs:
       exchange_filter:
-        description: 'Exchange to filter (e.g., NASDAQ, NYSE, or leave blank for all)'
+        description: 'Exchange to process (NYSE, NASDAQ, or leave blank for all)'
         required: false
-        type: string
+        type: choice
+        options:
+          - ''
+          - NYSE
+          - NASDAQ
+          - AMEX
+        default: ''
       max_symbols:
-        description: 'Maximum number of symbols to process (leave blank for all)'
+        description: 'Maximum number of symbols to process (blank = all eligible symbols)'
         required: false
-        type: string
+        type: number
       skip_recent_hours:
-        description: 'Skip symbols processed in the last N hours (leave blank to process all eligible)'
+        description: 'Skip symbols processed within this many hours (blank = re-process all)'
         required: false
-        type: string
+        type: number
+      batch_size:
+        description: 'Number of symbols to process per batch'
+        required: false
+        type: number
+        default: 50
   schedule:
     # Run weekly on Sunday at 3 AM UTC (fundamentals don't change daily)
     - cron: '0 3 * * 0'
 
 jobs:
-  cash-flow-etl:
+  watermark-cash-flow-etl:
     runs-on: ubuntu-22.04
     timeout-minutes: 360  # 6 hours max
     permissions:
@@ -30,97 +41,129 @@ jobs:
       PYTHONUNBUFFERED: '1'
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install requests boto3 snowflake-connector-python
-      
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ secrets.AWS_REGION }}
-      
-      - name: Run Cash Flow Watermark ETL
-        env:
-          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          S3_BUCKET: fin-trade-craft-landing
-          S3_CASH_FLOW_PREFIX: 'cash_flow/'
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-          SNOWFLAKE_DATABASE: 'FIN_TRADE_EXTRACT'
-          SNOWFLAKE_SCHEMA: 'RAW'
-          SNOWFLAKE_WAREHOUSE: 'FIN_TRADE_WH'
-          EXCHANGE_FILTER: ${{ github.event.inputs.exchange_filter }}
-          MAX_SYMBOLS: ${{ github.event.inputs.max_symbols }}
-          SKIP_RECENT_HOURS: ${{ github.event.inputs.skip_recent_hours }}
-        run: |
-          echo "🚀 Starting Cash Flow Watermark ETL..."
-          echo "Exchange Filter: ${{ github.event.inputs.exchange_filter || 'ALL' }}"
-          echo "Max Symbols: ${{ github.event.inputs.max_symbols || 'ALL' }}"
-          echo "Skip Recent Hours: ${{ github.event.inputs.skip_recent_hours || 'NONE' }}"
-          python scripts/github_actions/fetch_cash_flow_watermark.py
-      
-      - name: Load Cash Flow Data to Snowflake
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-        run: |
-          echo "📊 Loading cash flow data from S3 to Snowflake..."
-          pip install snowflake-connector-python
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install boto3 requests snowflake-connector-python
+
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Fetch cash flow data using watermarks
+      env:
+        ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+        AWS_REGION: ${{ secrets.AWS_REGION }}
+        S3_BUCKET: fin-trade-craft-landing
+        S3_CASH_FLOW_PREFIX: cash_flow/
+        SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+        SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+        SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+        EXCHANGE_FILTER: ${{ inputs.exchange_filter }}
+        MAX_SYMBOLS: ${{ inputs.max_symbols }}
+        SKIP_RECENT_HOURS: ${{ inputs.skip_recent_hours }}
+        BATCH_SIZE: ${{ inputs.batch_size || '50' }}
+      run: |
+        echo "🚀 Starting watermark-based cash flow ETL..."
+        if [ -n "$EXCHANGE_FILTER" ]; then
+          echo "🏢 Exchange filter: $EXCHANGE_FILTER"
+        else
+          echo "🌐 Processing: All exchanges"
+        fi
+        if [ -n "$MAX_SYMBOLS" ]; then
+          echo "🔒 Symbol limit: $MAX_SYMBOLS symbols (testing mode)"
+        else
+          echo "📊 Processing: All eligible symbols from watermarks"
+        fi
+        if [ -n "$SKIP_RECENT_HOURS" ]; then
+          echo "⏭️  Skip recent: Symbols processed within $SKIP_RECENT_HOURS hours will be skipped"
+        else
+          echo "🔄 Re-process: All eligible symbols will be processed"
+        fi
+        echo "📋 Batch size: $BATCH_SIZE symbols"
+        echo ""
+        echo "📍 Cash Flow Logic:"
+        echo "  - Only active common stocks (ASSET_TYPE='Stock' AND STATUS='Active')"
+        echo "  - Annual + Quarterly reports from Alpha Vantage API"
+        echo "  - Update watermarks with fiscal date range"
+        echo "  - Mark delisted stocks as 'DEL' after successful extraction"
+        echo ""
+        
+        python scripts/github_actions/fetch_cash_flow_watermark.py
+
+    - name: Load cash flow data into Snowflake
+      env:
+        SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+        SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+        SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+      run: |
+        echo "�️ Loading cash flow data into Snowflake..."
+        python scripts/github_actions/snowflake_run_sql_file.py snowflake/load_cash_flow_from_s3.sql
+
+    - name: Upload processing results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: watermark-etl-results-${{ github.run_number }}
+        path: /tmp/watermark_etl_results.json
+        retention-days: 30
+
+    - name: Summary Report
+      if: always()
+      run: |
+        echo "📊 WATERMARK-BASED ETL PROCESSING SUMMARY"
+        echo "=========================================="
+        if [ -n "${{ inputs.exchange_filter }}" ]; then
+          echo "🏢 Exchange: ${{ inputs.exchange_filter }}"
+        else
+          echo "🌐 Exchange: All"
+        fi
+        echo ""
+        if [ -f /tmp/watermark_etl_results.json ]; then
           python -c "
-          import snowflake.connector
-          import os
-          
-          # Read SQL file
-          with open('snowflake/load_cash_flow_from_s3.sql', 'r') as f:
-              sql_content = f.read()
-          
-          # Connect to Snowflake
-          conn = snowflake.connector.connect(
-              account=os.environ['SNOWFLAKE_ACCOUNT'],
-              user=os.environ['SNOWFLAKE_USER'],
-              password=os.environ['SNOWFLAKE_PASSWORD']
-          )
-          
-          cursor = conn.cursor()
-          
-          # Execute SQL statements
-          for statement in sql_content.split(';'):
-              statement = statement.strip()
-              if statement and not statement.startswith('--'):
-                  try:
-                      cursor.execute(statement)
-                      # Fetch results if any
-                      if cursor.description:
-                          results = cursor.fetchall()
-                          if results:
-                              for row in results:
-                                  print(row)
-                  except Exception as e:
-                      print(f'Error executing statement: {e}')
-                      print(f'Statement: {statement[:100]}...')
-          
-          cursor.close()
-          conn.close()
-          print('✅ Cash flow data loaded successfully!')
-          "
-      
-      - name: Upload ETL results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cash-flow-etl-results
-          path: /tmp/watermark_etl_results.json
-          retention-days: 30
+        import json
+        with open('/tmp/watermark_etl_results.json', 'r') as f:
+            results = json.load(f)
+        print(f'📈 Total symbols processed: {results[\"total_symbols\"]}')
+        print(f'✅ Successful: {results[\"successful\"]} ({results[\"successful\"]/results[\"total_symbols\"]*100:.1f}%)')  
+        print(f'❌ Failed: {results[\"failed\"]}')
+        print(f'⏱️  Duration: {results[\"duration_minutes\"]:.1f} minutes')
+        
+        # Calculate efficiency
+        if results['total_symbols'] > 0 and results['duration_minutes'] > 0:
+            efficiency = results['successful'] / results['duration_minutes']
+            print(f'')
+            print(f'⚡ Processing efficiency: {efficiency:.1f} symbols/minute')
+        
+        print(f'')
+        print(f'✅ Watermarks updated for {results[\"successful\"]} symbols')
+        print(f'   - FIRST_FISCAL_DATE set (if NULL)')
+        print(f'   - LAST_FISCAL_DATE updated to latest data')
+        print(f'   - LAST_SUCCESSFUL_RUN = current timestamp')
+        print(f'   - CONSECUTIVE_FAILURES reset to 0')
+        
+        # Show delisted symbols marked
+        if results.get('delisted_marked', 0) > 0:
+            print(f'')
+            print(f'🔒 Delisted symbols marked as API_ELIGIBLE=\"DEL\": {results[\"delisted_marked\"]}')
+            print(f'   (Symbols with DELISTING_DATE that have been successfully extracted)')
+        "
+        else
+          echo "❌ No results file found - check logs for errors"
+        fi
