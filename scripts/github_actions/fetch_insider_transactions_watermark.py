@@ -180,7 +180,7 @@ def fetch_insider_transactions_data(symbol: str, api_key: str) -> Optional[List[
     Fetch insider trading data from Alpha Vantage API.
     """
     url = "https://www.alphavantage.co/query"
-    params = {'function': 'INSIDER_TRADING', 'symbol': symbol, 'apikey': api_key}
+    params = {'function': 'INSIDER_TRANSACTIONS', 'symbol': symbol, 'apikey': api_key}
     
     try:
         response = requests.get(url, params=params, timeout=30)
