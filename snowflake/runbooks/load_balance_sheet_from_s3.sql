@@ -137,9 +137,16 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING (
     COMMON_STOCK_SHARES_OUTSTANDING VARCHAR(50)
 );
 
--- Step 5: Copy data from S3 into staging table
+-- Step 5: Copy data from S3 into staging table, explicitly mapping CSV columns
 COPY INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING
-FROM @BALANCE_SHEET_STAGE
+FROM (
+    SELECT
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+        $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+        $31, $32, $33, $34, $35, $36, $37, $38
+    FROM @BALANCE_SHEET_STAGE
+)
 FILE_FORMAT = (
     TYPE = 'CSV'
     SKIP_HEADER = 1
@@ -149,11 +156,8 @@ FILE_FORMAT = (
     EMPTY_FIELD_AS_NULL = TRUE
     FIELD_OPTIONALLY_ENCLOSED_BY = '"'
     TRIM_SPACE = TRUE
-    ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE
 )
-PATTERN = '.*\.csv'
-ON_ERROR = 'CONTINUE'
-FORCE = TRUE;
+ON_ERROR = 'CONTINUE';
 
 -- Step 6: Show row counts and column names
 SELECT 'Row Count Check' as info;
