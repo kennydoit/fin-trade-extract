@@ -174,12 +174,19 @@ FILE_FORMAT = (
 PURGE = FALSE
 ON_ERROR = 'CONTINUE';
 
--- Step 6: Show row counts
+-- Step 6: Show row counts and column names
+SELECT 'Row Count Check' as info;
 SELECT 
     COUNT(*) as total_rows,
     COUNT(DISTINCT SYMBOL) as unique_symbols,
     COUNT(DISTINCT FISCAL_DATE_ENDING) as unique_dates
 FROM BALANCE_SHEET_STAGING;
+
+-- Diagnostic: Show actual column values to verify load
+SELECT 'Sample Data' as info;
+SELECT SYMBOL, FISCAL_DATE_ENDING, PERIOD_TYPE, REPORTED_CURRENCY
+FROM BALANCE_SHEET_STAGING
+LIMIT 5;
 
 -- Step 7: Data Quality Checks
 -- Check for missing required fields
