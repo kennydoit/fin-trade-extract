@@ -97,8 +97,9 @@ USING (
         NULL AS SYMBOL_ID,        -- To be populated later
         CURRENT_TIMESTAMP() AS LOAD_DATE
     FROM FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS_STAGING
-    WHERE TRY_TO_DATE(transaction_date) IS NOT NULL
-      AND ticker IS NOT NULL
+        WHERE TRY_TO_DATE(transaction_date) IS NOT NULL
+            AND ticker IS NOT NULL
+            AND acquisition_or_disposal IS NOT NULL
 ) source
 ON target.SYMBOL = source.SYMBOL
    AND target.TRANSACTION_DATE = source.TRANSACTION_DATE
