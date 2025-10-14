@@ -1,9 +1,7 @@
-<<<<<<< HEAD
 # Renamed for GitHub Actions UI compatibility
 name: Insider Transactions ETL - Watermark Based
 =======
 name: Insider Transactions ETL - Watermark Based 
->>>>>>> 39430deecc40c8d44ccfc5bbf9df0e32af79953f
 
 on:
   workflow_dispatch:
