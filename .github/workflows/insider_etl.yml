@@ -104,6 +104,8 @@ jobs:
         echo "  - Tracks executive/director buy/sell transactions"
         echo "  - Update watermarks with transaction date range"
         echo ""
+        echo "Running Insider Transactions ETL fetch script..."
+        python scripts/etl/fetch_insider_transactions_watermark.py
         
     - name: Load insider transactions data into Snowflake
       env:
