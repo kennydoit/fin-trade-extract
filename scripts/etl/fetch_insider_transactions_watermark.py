@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Watermark-Based Insider Transactions ETL
-Fetches INSIDER_TRADING data using the ETL_WATERMARKS table for incremental processing.
+Fetches INSIDER_TRANSACTIONS data using the ETL_WATERMARKS table for incremental processing.
 """
 
 import os
@@ -104,17 +104,41 @@ class WatermarkETLManager:
         
         if successful_symbols:
             logger.info(f"📝 Bulk updating {len(successful_symbols)} successful watermarks...")
-            symbols_list = "', '".join(successful_symbols)
-            cursor.execute(f"""
-                UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-                SET 
-                    LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(),
-                    CONSECUTIVE_FAILURES = 0,
-                    UPDATED_AT = CURRENT_TIMESTAMP()
-                WHERE TABLE_NAME = '{self.table_name}'
-                  AND SYMBOL IN ('{symbols_list}')
-            """)
-            logger.info(f"✅ Bulk updated {len(successful_symbols)} successful watermarks")
+            for symbol in successful_symbols:
+                # Find the corresponding S3 file for this symbol
+                s3_prefix = os.environ.get('S3_INSIDER_TRANSACTIONS_PREFIX', 'insider_transactions/')
+                s3_bucket = os.environ.get('S3_BUCKET', 'fin-trade-craft-landing')
+                s3_client = boto3.client('s3')
+                # Find the latest file for this symbol
+                response = s3_client.list_objects_v2(Bucket=s3_bucket, Prefix=f"{s3_prefix}{symbol}_")
+                files = response.get('Contents', [])
+                if not files:
+                    logger.warning(f"No S3 files found for symbol {symbol}, skipping fiscal date update.")
+                    continue
+                # Get the most recent file for this symbol
+                latest_file = max(files, key=lambda x: x['LastModified'])['Key']
+                obj = s3_client.get_object(Bucket=s3_bucket, Key=latest_file)
+                csv_data = obj['Body'].read().decode('utf-8')
+                reader = csv.DictReader(StringIO(csv_data))
+                dates = [row['transaction_date'] for row in reader if row.get('transaction_date')]
+                if not dates:
+                    logger.warning(f"No transaction_date found in S3 file for symbol {symbol}, skipping fiscal date update.")
+                    continue
+                min_date = min(dates)
+                max_date = max(dates)
+                logger.info(f"Updating {symbol}: FIRST_FISCAL_DATE={min_date}, LAST_FISCAL_DATE={max_date}")
+                cursor.execute(f"""
+                    UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+                    SET 
+                        LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(),
+                        CONSECUTIVE_FAILURES = 0,
+                        UPDATED_AT = CURRENT_TIMESTAMP(),
+                        FIRST_FISCAL_DATE = '{min_date}',
+                        LAST_FISCAL_DATE = '{max_date}'
+                    WHERE TABLE_NAME = '{self.table_name}'
+                      AND SYMBOL = '{symbol}'
+                """)
+            logger.info(f"✅ Bulk updated {len(successful_symbols)} successful watermarks (with fiscal dates)")
 
         if failed_symbols:
             logger.info(f"📝 Updating {len(failed_symbols)} failed watermarks...")
