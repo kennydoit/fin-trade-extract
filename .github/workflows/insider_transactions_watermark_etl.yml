@@ -1,3 +1,4 @@
+# Trigger re-index: trivial comment
 name: Insider Transactions ETL - Watermark Based
 
 on:
