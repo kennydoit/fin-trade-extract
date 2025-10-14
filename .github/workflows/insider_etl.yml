@@ -1,5 +1,5 @@
 <<<<<<< HEAD
-# Trigger re-index: trivial comment
+# Renamed for GitHub Actions UI compatibility
 name: Insider Transactions ETL - Watermark Based
 =======
 name: Insider Transactions ETL - Watermark Based 
