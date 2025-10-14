@@ -21,7 +21,7 @@ import snowflake.connector
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class WatermarkETLManager:
     """Manages ETL processing using the ETL_WATERMARKS table."""
@@ -44,58 +44,56 @@ class WatermarkETLManager:
             self.connection = None
             logger.info("🔒 Snowflake connection closed")
     
-    def get_symbols_to_process(self, exchange_filter: Optional[str] = None,
-                               max_symbols: Optional[int] = None,
-                               skip_recent_hours: Optional[int] = None) -> List[Dict]:
+def get_symbols_to_process(self, exchange_filter: Optional[str] = None,
+                           max_symbols: Optional[int] = None,
+                           skip_recent_hours: Optional[int] = None) -> List[Dict]:
+    """
+    Get symbols to process from ETL_WATERMARKS table.
+    """
+    self.connect()
+    
+    query = f"""
+        SELECT 
+            SYMBOL,
+            EXCHANGE,
+            ASSET_TYPE,
+            STATUS,
+            LAST_SUCCESSFUL_RUN
+        FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+        WHERE TABLE_NAME = '{self.table_name}'
+          AND API_ELIGIBLE = 'YES'
+    """
+    if skip_recent_hours:
+        query += f"""
+          AND (LAST_SUCCESSFUL_RUN IS NULL 
+               OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
         """
-        Get symbols to process from ETL_WATERMARKS table.
-        """
-        self.connect()
-        
-        query = f"""
-            SELECT 
-                SYMBOL,
-                EXCHANGE,
-                ASSET_TYPE,
-                STATUS,
-                LAST_SUCCESSFUL_RUN
-            FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-            WHERE TABLE_NAME = '{self.table_name}'
-              AND API_ELIGIBLE = 'YES'
-        """
-        
-        if skip_recent_hours:
-            query += f"""
-              AND (LAST_SUCCESSFUL_RUN IS NULL 
-                   OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
-            """
-        
-        if exchange_filter:
-            query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
-        
-        query += "\n            ORDER BY SYMBOL"
-        
-        if max_symbols:
-            query += f"\n            LIMIT {max_symbols}"
-        
-        logger.info(f"📊 Querying watermarks for {self.table_name}...")
-        if exchange_filter:
-            logger.info(f"🏢 Exchange filter: {exchange_filter}")
-        if max_symbols:
-            logger.info(f"🔒 Symbol limit: {max_symbols}")
-        if skip_recent_hours:
-            logger.info(f"⏭️  Skip recent: {skip_recent_hours} hours")
-        
-        cursor = self.connection.cursor()
-        cursor.execute(query)
-        results = cursor.fetchall()
-        cursor.close()
-        
-        symbols_to_process = [{'symbol': row[0], 'exchange': row[1], 'asset_type': row[2], 'status': row[3]} for row in results]
-        
-        logger.info(f"📈 Found {len(symbols_to_process)} symbols to process")
-        
-        return symbols_to_process
+    if exchange_filter:
+        query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
+    query += "\n            ORDER BY SYMBOL"
+    if max_symbols:
+        query += f"\n            LIMIT {max_symbols}"
+
+    logger.debug(f"[DEBUG] Watermark symbol query: {query}")
+    logger.info(f"📊 Querying watermarks for {self.table_name}...")
+    if exchange_filter:
+        logger.info(f"🏢 Exchange filter: {exchange_filter}")
+    if max_symbols:
+        logger.info(f"🔒 Symbol limit: {max_symbols}")
+    if skip_recent_hours:
+        logger.info(f"⏭️  Skip recent: {skip_recent_hours} hours")
+
+    cursor = self.connection.cursor()
+    cursor.execute(query)
+    results = cursor.fetchall()
+    logger.debug(f"[DEBUG] Watermark query results: {results}")
+    cursor.close()
+
+    symbols_to_process = [{'symbol': row[0], 'exchange': row[1], 'asset_type': row[2], 'status': row[3]} for row in results]
+    logger.debug(f"[DEBUG] symbols_to_process: {symbols_to_process}")
+    logger.info(f"📈 Found {len(symbols_to_process)} symbols to process")
+
+    return symbols_to_process
     
     def bulk_update_watermarks(self, successful_symbols: List[str], failed_symbols: List[str]):
         """
