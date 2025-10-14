@@ -94,7 +94,7 @@ USING (
         TRY_TO_NUMBER(share_price, 38, 4) AS PRICE_PER_SHARE,
         executive AS INSIDER_NAME,
         executive_title AS INSIDER_TITLE,
-        NULL AS SYMBOL_ID,        -- To be populated later
+    ABS(HASH(ticker)) % 1000000000 AS SYMBOL_ID,
         CURRENT_TIMESTAMP() AS LOAD_DATE
     FROM FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS_STAGING
         WHERE TRY_TO_DATE(transaction_date) IS NOT NULL
