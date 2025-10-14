@@ -272,14 +272,14 @@ def main():
         return
 
     results = {'total_symbols': len(symbols_to_process), 'successful': 0, 'failed': 0, 'successful_symbols': [], 'failed_symbols': []}
-    
+
     for i, symbol_info in enumerate(symbols_to_process, 1):
         symbol = symbol_info['symbol']
         logger.info(f"📊 [{i}/{len(symbols_to_process)}] Processing {symbol}...")
         rate_limiter.wait_if_needed()
-        
+
         data = fetch_insider_transactions_data(symbol, api_key)
-        
+
         if data and upload_to_s3(symbol, data, s3_client, s3_bucket, s3_prefix):
             results['successful'] += 1
             results['successful_symbols'].append(symbol)
@@ -287,13 +287,18 @@ def main():
             results['failed'] += 1
             results['failed_symbols'].append(symbol)
 
+    logger.debug(f"[DEBUG] Successful symbols to update: {results['successful_symbols']}")
+    logger.debug(f"[DEBUG] Failed symbols to update: {results['failed_symbols']}")
+    logger.debug(f"[DEBUG] Connection before commit: {watermark_manager.connection}")
     try:
         watermark_manager.connect()
         watermark_manager.bulk_update_watermarks(results['successful_symbols'], results['failed_symbols'])
+        logger.debug("[DEBUG] Committing watermark updates...")
         watermark_manager.connection.commit()
+        logger.debug(f"[DEBUG] Connection after commit: {watermark_manager.connection}")
     finally:
         watermark_manager.close()
-    
+
     logger.info("🎉 ETL processing complete!")
     logger.info(f"✅ Successful: {results['successful']}/{results['total_symbols']}")
     logger.info(f"❌ Failed: {results['failed']}/{results['total_symbols']}")
