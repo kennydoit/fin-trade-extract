@@ -116,7 +116,7 @@ jobs:
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
       run: |
         echo "🗄️ Loading insider transactions data into Snowflake..."
-        python scripts/github_actions/snowflake_run_sql_file.py snowflake/load_insider_transactions_from_s3.sql
+        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_insider_transactions_from_s3.sql
 
     - name: Upload processing results
       if: always()

@@ -1,5 +1,7 @@
 
 
+https://www.alphavantage.co/documentation/#economic-indicators
+
 
 """
 Economic Indicators Extractor using incremental ETL architecture.
