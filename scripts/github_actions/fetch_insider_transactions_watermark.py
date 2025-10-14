@@ -186,20 +186,23 @@ def fetch_insider_transactions_data(symbol: str, api_key: str) -> Optional[List[
         response = requests.get(url, params=params, timeout=30)
         response.raise_for_status()
         
+        # Handle rate limiting message
         if 'Thank you for using Alpha Vantage!' in response.text:
              logger.warning(f"⚠️  API rate limit hit for {symbol}")
              return None
         
-        if not response.text.strip() or "transactionDate" not in response.text:
-            logger.warning(f"⚠️  No insider transactions data for {symbol}")
-            # Add detailed logging for debugging
-            logger.info(f"📦 Raw response for {symbol} (first 500 chars): {response.text[:500]}")
+        # Parse JSON response
+        try:
+            content = response.json()
+        except json.JSONDecodeError:
+            logger.warning(f"⚠️  Could not decode JSON for {symbol}. Response: {response.text[:200]}")
             return None
 
-        csv_reader = csv.DictReader(StringIO(response.text))
-        data = [row for row in csv_reader]
+        # The data is in the 'data' key
+        data = content.get('data')
 
-        if not data:
+        # Check if data is a list and not empty
+        if not isinstance(data, list) or not data:
             logger.warning(f"⚠️  No insider transactions data for {symbol}")
             return None
 
