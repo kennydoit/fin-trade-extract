@@ -1,4 +1,4 @@
-name: Insider Transactions ETL - Watermark Based
+name: Insider Transactions ETL - Watermark Based 
 
 on:
   workflow_dispatch:
