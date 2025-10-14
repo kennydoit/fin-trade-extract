@@ -104,7 +104,7 @@ jobs:
         echo "  - Update watermarks with transaction date range"
         echo ""
         
-        python scripts/github_actions/fetch_insider_transactions_watermark.py
+  python scripts/etl/fetch_insider_transactions_watermark.py
 
     - name: Load insider transactions data into Snowflake
       env:
