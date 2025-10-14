@@ -124,17 +124,22 @@ class WatermarkETLManager:
                 if not dates:
                     logger.warning(f"No transaction_date found in S3 file for symbol {symbol}, skipping fiscal date update.")
                     continue
-                min_date = min(dates)
-                max_date = max(dates)
-                logger.info(f"Updating {symbol}: FIRST_FISCAL_DATE={min_date}, LAST_FISCAL_DATE={max_date}")
+                # Parse and reformat dates to YYYY-MM-DD for Snowflake
+                try:
+                    min_date_fmt = datetime.strptime(min(dates), "%Y-%m-%d").strftime("%Y-%m-%d")
+                    max_date_fmt = datetime.strptime(max(dates), "%Y-%m-%d").strftime("%Y-%m-%d")
+                except Exception as e:
+                    logger.error(f"Date parsing error for symbol {symbol}: {e}. Raw dates: {dates}")
+                    continue
+                logger.info(f"Updating {symbol}: FIRST_FISCAL_DATE={min_date_fmt}, LAST_FISCAL_DATE={max_date_fmt}")
                 cursor.execute(f"""
                     UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
                     SET 
                         LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(),
                         CONSECUTIVE_FAILURES = 0,
                         UPDATED_AT = CURRENT_TIMESTAMP(),
-                        FIRST_FISCAL_DATE = '{min_date}',
-                        LAST_FISCAL_DATE = '{max_date}'
+                        FIRST_FISCAL_DATE = '{min_date_fmt}',
+                        LAST_FISCAL_DATE = '{max_date_fmt}'
                     WHERE TABLE_NAME = '{self.table_name}'
                       AND SYMBOL = '{symbol}'
                 """)
