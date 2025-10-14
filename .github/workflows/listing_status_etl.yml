@@ -44,7 +44,7 @@ jobs:
           echo "📈 Will fetch all currently active (listed) stocks"
           echo "📉 Will fetch all available delisted stocks"
           echo "� Alpha Vantage automatically provides appropriate data for each call"
-          python scripts/github_actions/fetch_listing_status_to_s3.py
+          python scripts/etl/fetch_listing_status_to_s3.py
 
       - name: Load LISTING_STATUS into Snowflake
         env:

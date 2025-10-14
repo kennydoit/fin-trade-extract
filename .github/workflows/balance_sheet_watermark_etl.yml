@@ -99,7 +99,7 @@ jobs:
         echo "  - Mark delisted stocks as 'DEL' after successful extraction"
         echo ""
         
-        python scripts/github_actions/fetch_balance_sheet_watermark.py
+        python scripts/etl/fetch_balance_sheet_watermark.py
 
     - name: Load balance sheet data into Snowflake
       env:

@@ -102,7 +102,7 @@ jobs:
         echo "  - Mark delisted stocks as 'DEL' after successful extraction"
         echo ""
         
-        python scripts/github_actions/fetch_income_statement_watermark.py
+        python scripts/etl/fetch_income_statement_watermark.py
 
     - name: Load income statement data into Snowflake
       env:
@@ -114,7 +114,7 @@ jobs:
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
       run: |
         echo "🗄️ Loading income statement data into Snowflake..."
-        python scripts/github_actions/snowflake_run_sql_file.py snowflake/load_income_statement_from_s3.sql
+        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_income_statement_from_s3.sql
 
     - name: Upload processing results
       if: always()

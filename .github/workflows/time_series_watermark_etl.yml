@@ -105,7 +105,7 @@ jobs:
         echo "  - If LAST_FISCAL_DATE >= $STALENESS_DAYS days ago → Full refresh"
         echo ""
         
-        python scripts/github_actions/fetch_time_series_watermark.py
+        python scripts/etl/fetch_time_series_watermark.py
 
     - name: Load time series data into Snowflake
       env:

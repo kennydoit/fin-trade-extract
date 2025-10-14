@@ -104,7 +104,7 @@ jobs:
         echo "  - Mark delisted stocks as 'DEL' after successful extraction"
         echo ""
         
-        python scripts/github_actions/fetch_company_overview_watermark.py
+        python scripts/etl/fetch_company_overview_watermark.py
 
     - name: Load company overview data into Snowflake
       env:
