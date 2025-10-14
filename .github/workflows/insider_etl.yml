@@ -1,7 +1,5 @@
 # Renamed for GitHub Actions UI compatibility
 name: Insider Transactions ETL - Watermark Based
-=======
-name: Insider Transactions ETL - Watermark Based 
 
 on:
   workflow_dispatch:
@@ -107,8 +105,6 @@ jobs:
         echo "  - Update watermarks with transaction date range"
         echo ""
         
-  python scripts/etl/fetch_insider_transactions_watermark.py
-
     - name: Load insider transactions data into Snowflake
       env:
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
