@@ -33,27 +33,22 @@ CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS_STAGE
 -- Step 2: List files in stage to verify content
 LIST @INSIDER_TRANSACTIONS_STAGE;
 
--- Step 3: Create or alter the target table to allow NULLs for missing data
+-- Step 3: Create the target table with a simplified schema
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS (
     SYMBOL VARCHAR(20) NOT NULL,
     TRANSACTION_DATE DATE NOT NULL,
     TRANSACTION_TYPE VARCHAR(50),
     SHARES NUMBER(38, 2),
     PRICE_PER_SHARE NUMBER(38, 4),
-    TOTAL_VALUE NUMBER(38, 2),
     INSIDER_NAME VARCHAR(255),
     INSIDER_TITLE VARCHAR(255),
-    TRANSACTION_CODE VARCHAR(10),
-    FILING_DATE DATE, -- Changed to nullable
     SYMBOL_ID NUMBER(38, 0),
     LOAD_DATE TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
 
-    -- Define a composite primary key to uniquely identify each transaction
-    PRIMARY KEY (SYMBOL, TRANSACTION_DATE, INSIDER_NAME, TRANSACTION_TYPE, SHARES, PRICE_PER_SHARE)
-);
-
--- Ensure FILING_DATE is nullable if table already exists
-ALTER TABLE FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS ALTER COLUMN FILING_DATE DROP NOT NULL;
+    -- Define a simplified composite primary key
+    PRIMARY KEY (SYMBOL, TRANSACTION_DATE, INSIDER_NAME, TRANSACTION_TYPE)
+)
+COMMENT = 'Insider trading data from Alpha Vantage API - watermark based ETL';
 
 -- Add comment to table
 COMMENT ON TABLE FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS IS 'Insider trading data from Alpha Vantage API - watermark based ETL';
@@ -70,6 +65,9 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS_STA
     share_price VARCHAR(50)
 );
 
+-- Defensively truncate the staging table to ensure it's empty
+TRUNCATE TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS_STAGING;
+
 -- Step 5: Copy data from S3 into staging table
 COPY INTO FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS_STAGING
 FROM @INSIDER_TRANSACTIONS_STAGE
@@ -85,7 +83,7 @@ FILE_FORMAT = (
 )
 ON_ERROR = 'CONTINUE';
 
--- Step 6: MERGE staging data into target table
+-- Step 6: MERGE staging data into target table (simplified)
 MERGE INTO FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS target
 USING (
     SELECT
@@ -94,11 +92,8 @@ USING (
         acquisition_or_disposal AS TRANSACTION_TYPE,
         TRY_TO_NUMBER(shares, 38, 2) AS SHARES,
         TRY_TO_NUMBER(share_price, 38, 4) AS PRICE_PER_SHARE,
-        (TRY_TO_NUMBER(shares, 38, 2) * TRY_TO_NUMBER(share_price, 38, 4)) AS TOTAL_VALUE,
         executive AS INSIDER_NAME,
         executive_title AS INSIDER_TITLE,
-        NULL AS TRANSACTION_CODE, -- Not provided by API
-        NULL AS FILING_DATE,      -- Not provided by API
         NULL AS SYMBOL_ID,        -- To be populated later
         CURRENT_TIMESTAMP() AS LOAD_DATE
     FROM FIN_TRADE_EXTRACT.RAW.INSIDER_TRANSACTIONS_STAGING
@@ -109,19 +104,15 @@ ON target.SYMBOL = source.SYMBOL
    AND target.TRANSACTION_DATE = source.TRANSACTION_DATE
    AND target.INSIDER_NAME = source.INSIDER_NAME
    AND target.TRANSACTION_TYPE = source.TRANSACTION_TYPE
-   AND target.SHARES = source.SHARES
-   AND target.PRICE_PER_SHARE = source.PRICE_PER_SHARE
 
 WHEN NOT MATCHED THEN
     INSERT (
         SYMBOL, TRANSACTION_DATE, TRANSACTION_TYPE, SHARES, PRICE_PER_SHARE,
-        TOTAL_VALUE, INSIDER_NAME, INSIDER_TITLE, TRANSACTION_CODE, FILING_DATE,
-        SYMBOL_ID, LOAD_DATE
+        INSIDER_NAME, INSIDER_TITLE, SYMBOL_ID, LOAD_DATE
     )
     VALUES (
         source.SYMBOL, source.TRANSACTION_DATE, source.TRANSACTION_TYPE, source.SHARES, source.PRICE_PER_SHARE,
-        source.TOTAL_VALUE, source.INSIDER_NAME, source.INSIDER_TITLE, source.TRANSACTION_CODE, source.FILING_DATE,
-        source.SYMBOL_ID, source.LOAD_DATE
+        source.INSIDER_NAME, source.INSIDER_TITLE, source.SYMBOL_ID, source.LOAD_DATE
     );
 
 -- Step 7: Cleanup staging table
