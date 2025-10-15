@@ -1,4 +1,4 @@
-
+# Below is a previous ETL for earnings call transcripts
 
 
 """
