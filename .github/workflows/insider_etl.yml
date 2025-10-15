@@ -84,8 +84,8 @@ jobs:
         EXCHANGE_FILTER: ${{ inputs.exchange_filter }}
         MAX_SYMBOLS: ${{ inputs.max_symbols }}
         SKIP_RECENT_HOURS: ${{ inputs.skip_recent_hours }}
-    BATCH_SIZE: ${{ inputs.batch_size }}
-    CONSECUTIVE_FAILURE_THRESHOLD: ${{ inputs.consecutive_failure_threshold }}
+        BATCH_SIZE: ${{ inputs.batch_size }}
+        CONSECUTIVE_FAILURE_THRESHOLD: ${{ inputs.consecutive_failure_threshold }}
       run: |
         echo "🚀 Starting watermark-based insider transactions ETL..."
         if [ -n "$EXCHANGE_FILTER" ]; then
