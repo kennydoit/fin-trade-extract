@@ -27,6 +27,11 @@ on:
         required: false
         type: number
         default: 100
+      consecutive_failure_threshold:
+        description: 'Omit symbols with how many consecutive failures?'
+        required: false
+        type: number
+        default: 3
   schedule:
     # Run monthly on 1st at 4 AM UTC (insider trading data is sporadic)
     - cron: '0 4 1 * *'
@@ -62,7 +67,7 @@ jobs:
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
         aws-region: ${{ secrets.AWS_REGION }}
-        role-session-duration: 43200
+        role-duration-seconds: 43200
 
     - name: Fetch insider transactions data using watermarks
       env:
@@ -79,7 +84,8 @@ jobs:
         EXCHANGE_FILTER: ${{ inputs.exchange_filter }}
         MAX_SYMBOLS: ${{ inputs.max_symbols }}
         SKIP_RECENT_HOURS: ${{ inputs.skip_recent_hours }}
-        BATCH_SIZE: ${{ inputs.batch_size || '100' }}
+  BATCH_SIZE: ${{ inputs.batch_size || '100' }}
+  CONSECUTIVE_FAILURE_THRESHOLD: ${{ inputs.consecutive_failure_threshold }}
       run: |
         echo "🚀 Starting watermark-based insider transactions ETL..."
         if [ -n "$EXCHANGE_FILTER" ]; then

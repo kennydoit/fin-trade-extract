@@ -120,17 +120,29 @@ class WatermarkETLManager:
                 obj = s3_client.get_object(Bucket=s3_bucket, Key=latest_file)
                 csv_data = obj['Body'].read().decode('utf-8')
                 reader = csv.DictReader(StringIO(csv_data))
-                dates = [row['transaction_date'] for row in reader if row.get('transaction_date')]
-                if not dates:
-                    logger.warning(f"No transaction_date found in S3 file for symbol {symbol}, skipping fiscal date update.")
+                import re
+                # Clean and filter dates
+                cleaned_dates = []
+
+                for d in [row['transaction_date'] for row in reader if row.get('transaction_date')]:
+                    d = d.strip()
+                    d = re.sub(r'<.*?>', '', d)  # Remove XML/HTML tags
+                    # Truncate at first non-digit/non-hyphen after YYYY-MM-DD
+                    match = re.match(r'^(\d{4}-\d{2}-\d{2})', d)
+                    if match:
+                        d_clean = match.group(1)
+                        cleaned_dates.append(d_clean)
+                        if d != d_clean:
+                            logger.info(f"Truncated timestamp/timezone from date: {d} -> {d_clean}")
+                    else:
+                        logger.warning(f"Skipping malformed date: {d}")
+
+                if not cleaned_dates:
+                    logger.warning(f"No valid transaction_date found in S3 file for symbol {symbol}, skipping fiscal date update.")
                     continue
-                # Parse and reformat dates to YYYY-MM-DD for Snowflake
-                try:
-                    min_date_fmt = datetime.strptime(min(dates), "%Y-%m-%d").strftime("%Y-%m-%d")
-                    max_date_fmt = datetime.strptime(max(dates), "%Y-%m-%d").strftime("%Y-%m-%d")
-                except Exception as e:
-                    logger.error(f"Date parsing error for symbol {symbol}: {e}. Raw dates: {dates}")
-                    continue
+
+                min_date_fmt = min(cleaned_dates)
+                max_date_fmt = max(cleaned_dates)
                 logger.info(f"Updating {symbol}: FIRST_FISCAL_DATE={min_date_fmt}, LAST_FISCAL_DATE={max_date_fmt}")
                 cursor.execute(f"""
                     UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
@@ -145,18 +157,7 @@ class WatermarkETLManager:
                 """)
             logger.info(f"✅ Bulk updated {len(successful_symbols)} successful watermarks (with fiscal dates)")
 
-        if failed_symbols:
-            logger.info(f"📝 Updating {len(failed_symbols)} failed watermarks...")
-            symbols_list = "', '".join(failed_symbols)
-            cursor.execute(f"""
-                UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-                SET 
-                    CONSECUTIVE_FAILURES = COALESCE(CONSECUTIVE_FAILURES, 0) + 1,
-                    UPDATED_AT = CURRENT_TIMESTAMP()
-                WHERE TABLE_NAME = '{self.table_name}'
-                  AND SYMBOL IN ('{symbols_list}')
-            """)
-            logger.info(f"✅ Updated {len(failed_symbols)} failed watermarks")
+        # No failed_symbols update; let the data decide API_ELIGIBLE status
         
         cursor.close()
 
