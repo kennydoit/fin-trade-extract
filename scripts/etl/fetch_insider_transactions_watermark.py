@@ -45,7 +45,8 @@ class WatermarkETLManager:
 
     def get_symbols_to_process(self, exchange_filter: Optional[str] = None,
                                max_symbols: Optional[int] = None,
-                               skip_recent_hours: Optional[int] = None) -> List[Dict]:
+                               skip_recent_hours: Optional[int] = None,
+                               consecutive_failure_threshold: Optional[int] = None) -> List[Dict]:
         """
         Get symbols to process from ETL_WATERMARKS table.
         """
@@ -56,16 +57,21 @@ class WatermarkETLManager:
                 EXCHANGE,
                 ASSET_TYPE,
                 STATUS,
-                LAST_SUCCESSFUL_RUN
+                LAST_SUCCESSFUL_RUN,
+                CONSECUTIVE_FAILURES
             FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
             WHERE TABLE_NAME = '{self.table_name}'
               AND API_ELIGIBLE = 'YES'
         """
-        if skip_recent_hours:
-            query += f"""
-              AND (LAST_SUCCESSFUL_RUN IS NULL 
-                   OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
-            """
+                if skip_recent_hours:
+                        query += f"""
+                            AND (LAST_SUCCESSFUL_RUN IS NULL 
+                                     OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
+                        """
+                if consecutive_failure_threshold is not None:
+                        query += f"""
+                            AND (CONSECUTIVE_FAILURES IS NULL OR CONSECUTIVE_FAILURES < {consecutive_failure_threshold})
+                        """
         if exchange_filter:
             query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
         query += "\n            ORDER BY SYMBOL"
@@ -87,7 +93,7 @@ class WatermarkETLManager:
         logger.debug(f"[DEBUG] Watermark query results: {results}")
         cursor.close()
 
-        symbols_to_process = [{'symbol': row[0], 'exchange': row[1], 'asset_type': row[2], 'status': row[3]} for row in results]
+    symbols_to_process = [{'symbol': row[0], 'exchange': row[1], 'asset_type': row[2], 'status': row[3]} for row in results]
         logger.debug(f"[DEBUG] symbols_to_process: {symbols_to_process}")
         logger.info(f"📈 Found {len(symbols_to_process)} symbols to process")
 
@@ -266,7 +272,9 @@ def upload_to_s3(symbol: str, data: List[Dict], s3_client, bucket: str, prefix: 
 
 def main():
     """Main ETL execution."""
+    consecutive_failure_threshold = int(os.environ.get('CONSECUTIVE_FAILURE_THRESHOLD', 3))
     logger.info("🚀 Starting Watermark-Based Insider Transactions ETL")
+    logger.info(f"❌ Omit symbols with >= {consecutive_failure_threshold} consecutive failures")
     
     api_key = os.environ['ALPHAVANTAGE_API_KEY']
     s3_bucket = os.environ.get('S3_BUCKET', 'fin-trade-craft-landing')
@@ -292,7 +300,10 @@ def main():
     
     try:
         symbols_to_process = watermark_manager.get_symbols_to_process(
-            exchange_filter=exchange_filter, max_symbols=max_symbols, skip_recent_hours=skip_recent_hours
+            exchange_filter=exchange_filter,
+            max_symbols=max_symbols,
+            skip_recent_hours=skip_recent_hours,
+            consecutive_failure_threshold=consecutive_failure_threshold
         )
     finally:
         watermark_manager.close()
