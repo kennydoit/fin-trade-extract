@@ -93,10 +93,9 @@ class WatermarkETLManager:
         logger.debug(f"[DEBUG] Watermark query results: {results}")
         cursor.close()
 
-    symbols_to_process = [{'symbol': row[0], 'exchange': row[1], 'asset_type': row[2], 'status': row[3]} for row in results]
+        symbols_to_process = [{'symbol': row[0], 'exchange': row[1], 'asset_type': row[2], 'status': row[3]} for row in results]
         logger.debug(f"[DEBUG] symbols_to_process: {symbols_to_process}")
         logger.info(f"📈 Found {len(symbols_to_process)} symbols to process")
-
         return symbols_to_process
     
     def bulk_update_watermarks(self, successful_symbols: List[str], failed_symbols: List[str]):
