@@ -26,6 +26,11 @@ on:
         required: false
         type: number
         default: 50
+      consecutive_failure_threshold:
+        description: 'Omit symbols with how many consecutive failures?'
+        required: false
+        type: number
+        default: 3
   schedule:
     # Run weekly on Sunday at 3 AM UTC (fundamentals don't change daily)
     - cron: '0 3 * * 0'
@@ -76,6 +81,7 @@ jobs:
         MAX_SYMBOLS: ${{ inputs.max_symbols }}
         SKIP_RECENT_HOURS: ${{ inputs.skip_recent_hours }}
         BATCH_SIZE: ${{ inputs.batch_size || '50' }}
+        CONSECUTIVE_FAILURE_THRESHOLD: ${{ inputs.consecutive_failure_threshold || '3' }}
       run: |
         echo "🚀 Starting watermark-based cash flow ETL..."
         if [ -n "$EXCHANGE_FILTER" ]; then

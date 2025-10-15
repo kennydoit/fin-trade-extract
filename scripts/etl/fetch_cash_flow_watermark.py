@@ -49,7 +49,8 @@ class WatermarkETLManager:
         self,
         exchange_filter: Optional[str] = None,
         max_symbols: Optional[int] = None,
-        skip_recent_hours: Optional[int] = None
+        skip_recent_hours: Optional[int] = None,
+        consecutive_failure_threshold: Optional[int] = None
     ) -> List[Dict]:
         """
         Get symbols that need cash flow data extraction based on watermarks.
@@ -59,116 +60,115 @@ class WatermarkETLManager:
         """
         self.connect()
         
-        query = f"""
-            SELECT 
-                SYMBOL,
-                EXCHANGE,
-                ASSET_TYPE,
-                STATUS,
-                FIRST_FISCAL_DATE,
-                LAST_FISCAL_DATE,
-                LAST_SUCCESSFUL_RUN,
-                CONSECUTIVE_FAILURES
-            FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-            WHERE TABLE_NAME = '{self.table_name}'
-              AND API_ELIGIBLE = 'YES'
-        """
-        
-        # FUNDAMENTALS-SPECIFIC LOGIC: Only pull if 135 days have passed since LAST_FISCAL_DATE
-        # This prevents unnecessary API calls when new quarterly data isn't available yet
-        # 135 days = 90 days (1 quarter) + 45 days (grace period for filing delays)
-        query += """
-              AND (LAST_FISCAL_DATE IS NULL 
-                   OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
-        """
+    query = f"""
+SELECT 
+    SYMBOL,
+    EXCHANGE,
+    ASSET_TYPE,
+    STATUS,
+    FIRST_FISCAL_DATE,
+    LAST_FISCAL_DATE,
+    LAST_SUCCESSFUL_RUN,
+    CONSECUTIVE_FAILURES
+FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+WHERE TABLE_NAME = '{self.table_name}'
+  AND API_ELIGIBLE = 'YES'
+"""
+    # FUNDAMENTALS-SPECIFIC LOGIC: Only pull if 135 days have passed since LAST_FISCAL_DATE
+    # This prevents unnecessary API calls when new quarterly data isn't available yet
+    # 135 days = 90 days (1 quarter) + 45 days (grace period for filing delays)
+    query += """
+  AND (LAST_FISCAL_DATE IS NULL 
+       OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
+"""
+    # Omit symbols with too many consecutive failures
+    if consecutive_failure_threshold is not None:
+        query += f"""
+  AND (CONSECUTIVE_FAILURES IS NULL OR CONSECUTIVE_FAILURES < {consecutive_failure_threshold})
+"""
         
         # Skip recently processed symbols if requested
         if skip_recent_hours:
             query += f"""
-              AND (LAST_SUCCESSFUL_RUN IS NULL 
-                   OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
-            """
-        
-        if exchange_filter:
-            query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
-        
-        query += "\n            ORDER BY SYMBOL"
-        
-        if max_symbols:
-            query += f"\n            LIMIT {max_symbols}"
-        
-        logger.info(f"📊 Querying watermarks for {self.table_name}...")
-        logger.info(f"📅 Fundamentals logic: Only symbols with LAST_FISCAL_DATE older than 135 days (or NULL)")
-        if exchange_filter:
-            logger.info(f"🏢 Exchange filter: {exchange_filter}")
-        if max_symbols:
-            logger.info(f"🔒 Symbol limit: {max_symbols}")
-        if skip_recent_hours:
-            logger.info(f"⏭️  Skip recent: {skip_recent_hours} hours")
-        
-        cursor = self.connection.cursor()
-        cursor.execute(query)
-        results = cursor.fetchall()
-        cursor.close()
-        
-        symbols_to_process = []
-        
-        for row in results:
-            symbol = row[0]
-            symbols_to_process.append({
-                'symbol': symbol,
-                'exchange': row[1],
-                'asset_type': row[2],
-                'status': row[3]
-            })
-        
-        logger.info(f"📈 Found {len(symbols_to_process)} symbols to process")
-        
-        return symbols_to_process
-    
-    def bulk_update_watermarks(self, successful_updates: List[Dict], failed_symbols: List[str]):
+            def get_symbols_to_process(
+                self,
+                exchange_filter: Optional[str] = None,
+                max_symbols: Optional[int] = None,
+                skip_recent_hours: Optional[int] = None,
+                consecutive_failure_threshold: Optional[int] = None
+            ) -> List[Dict]:
+                """
+                Get symbols that need cash flow data extraction based on watermarks.
+                Applies 135-day staleness check: Only fetch if LAST_FISCAL_DATE is NULL
+                or older than 135 days (quarterly data + 45-day filing grace period).
+                """
+                self.connect()
+
+                query = f"""
+        SELECT 
+            SYMBOL,
+            EXCHANGE,
+            ASSET_TYPE,
+            STATUS,
+            FIRST_FISCAL_DATE,
+            LAST_FISCAL_DATE,
+            LAST_SUCCESSFUL_RUN,
+            CONSECUTIVE_FAILURES
+        FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+        WHERE TABLE_NAME = '{self.table_name}'
+          AND API_ELIGIBLE = 'YES'
         """
-        Bulk update watermarks using a single MERGE statement (MUCH faster than individual UPDATEs).
-        
-        Args:
-            successful_updates: List of dicts with {symbol, first_date, last_date}
-            failed_symbols: List of symbols that failed processing
+                # FUNDAMENTALS-SPECIFIC LOGIC: Only pull if 135 days have passed since LAST_FISCAL_DATE
+                # This prevents unnecessary API calls when new quarterly data isn't available yet
+                # 135 days = 90 days (1 quarter) + 45 days (grace period for filing delays)
+                query += """
+          AND (LAST_FISCAL_DATE IS NULL 
+               OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
         """
-        if not self.connection:
-            raise RuntimeError("❌ No active Snowflake connection. Call connect() first.")
-        
-        cursor = self.connection.cursor()
-        
-        # Build VALUES clause for successful updates
-        if successful_updates:
-            logger.info(f"📝 Bulk updating {len(successful_updates)} successful watermarks...")
-            
-            # Create temporary table with updates
-            cursor.execute("""
-                CREATE TEMPORARY TABLE WATERMARK_UPDATES (
-                    SYMBOL VARCHAR(20),
-                    FIRST_DATE DATE,
-                    LAST_DATE DATE
-                )
-            """)
-            
-            # Build INSERT statement with all values
-            values_list = []
-            for update in successful_updates:
-                values_list.append(
-                    f"('{update['symbol']}', "
-                    f"TO_DATE('{update['first_date']}', 'YYYY-MM-DD'), "
-                    f"TO_DATE('{update['last_date']}', 'YYYY-MM-DD'))"
-                )
-            
-            # Insert all updates at once (batch insert is fast)
-            values_clause = ',\n'.join(values_list)
-            cursor.execute(f"""
-                INSERT INTO WATERMARK_UPDATES (SYMBOL, FIRST_DATE, LAST_DATE)
-                VALUES {values_clause}
-            """)
-            
-            # Single MERGE statement to update all watermarks at once (100x faster!)
+                # Omit symbols with too many consecutive failures
+                if consecutive_failure_threshold is not None:
+                    query += f"""
+          AND (CONSECUTIVE_FAILURES IS NULL OR CONSECUTIVE_FAILURES < {consecutive_failure_threshold})
+        """
+                # Skip recently processed symbols if requested
+                if skip_recent_hours:
+                    query += f"""
+          AND (LAST_SUCCESSFUL_RUN IS NULL 
+               OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
+        """
+                if exchange_filter:
+                    query += f"\n  AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
+                query += "\nORDER BY SYMBOL"
+                if max_symbols:
+                    query += f"\nLIMIT {max_symbols}"
+
+                logger.info(f"📊 Querying watermarks for {self.table_name}...")
+                logger.info(f"📅 Fundamentals logic: Only symbols with LAST_FISCAL_DATE older than 135 days (or NULL)")
+                if exchange_filter:
+                    logger.info(f"🏢 Exchange filter: {exchange_filter}")
+                if max_symbols:
+                    logger.info(f"🔒 Symbol limit: {max_symbols}")
+                if skip_recent_hours:
+                    logger.info(f"⏭️  Skip recent: {skip_recent_hours} hours")
+                if consecutive_failure_threshold is not None:
+                    logger.info(f"❌ Omit symbols with >= {consecutive_failure_threshold} consecutive failures")
+
+                cursor = self.connection.cursor()
+                cursor.execute(query)
+                results = cursor.fetchall()
+                cursor.close()
+
+                symbols_to_process = []
+                for row in results:
+                    symbol = row[0]
+                    symbols_to_process.append({
+                        'symbol': symbol,
+                        'exchange': row[1],
+                        'asset_type': row[2],
+                        'status': row[3]
+                    })
+                logger.info(f"📈 Found {len(symbols_to_process)} symbols to process")
+                return symbols_to_process
             merge_sql = f"""
                 MERGE INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS target
                 USING WATERMARK_UPDATES source
@@ -464,16 +464,18 @@ def upload_to_s3(data: Dict, s3_client, bucket: str, prefix: str) -> bool:
 def main():
     """Main execution function."""
     logger.info("🚀 Starting Cash Flow Watermark-Based ETL")
-    
+    consecutive_failure_threshold = int(os.environ.get('CONSECUTIVE_FAILURE_THRESHOLD', 3))
+    logger.info(f"❌ Omit symbols with >= {consecutive_failure_threshold} consecutive failures")
+
     # Get parameters from environment
     api_key = os.environ['ALPHAVANTAGE_API_KEY']
     s3_bucket = os.environ['S3_BUCKET']
     s3_prefix = os.environ.get('S3_CASH_FLOW_PREFIX', 'cash_flow/')
-    
+
     exchange_filter = os.environ.get('EXCHANGE_FILTER')
     max_symbols = os.environ.get('MAX_SYMBOLS')
     skip_recent_hours = os.environ.get('SKIP_RECENT_HOURS')
-    
+
     if max_symbols:
         max_symbols = int(max_symbols)
     if skip_recent_hours:
@@ -510,7 +512,8 @@ def main():
         symbols_to_process = watermark_manager.get_symbols_to_process(
             exchange_filter=exchange_filter,
             max_symbols=max_symbols,
-            skip_recent_hours=skip_recent_hours
+            skip_recent_hours=skip_recent_hours,
+            consecutive_failure_threshold=consecutive_failure_threshold
         )
     finally:
         # CRITICAL: Close Snowflake connection immediately after getting symbols
