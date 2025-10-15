@@ -63,15 +63,15 @@ class WatermarkETLManager:
             WHERE TABLE_NAME = '{self.table_name}'
               AND API_ELIGIBLE = 'YES'
         """
-                if skip_recent_hours:
-                        query += f"""
-                            AND (LAST_SUCCESSFUL_RUN IS NULL 
-                                     OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
-                        """
-                if consecutive_failure_threshold is not None:
-                        query += f"""
-                            AND (CONSECUTIVE_FAILURES IS NULL OR CONSECUTIVE_FAILURES < {consecutive_failure_threshold})
-                        """
+        if skip_recent_hours:
+            query += f"""
+              AND (LAST_SUCCESSFUL_RUN IS NULL 
+                   OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
+            """
+        if consecutive_failure_threshold is not None:
+            query += f"""
+              AND (CONSECUTIVE_FAILURES IS NULL OR CONSECUTIVE_FAILURES < {consecutive_failure_threshold})
+            """
         if exchange_filter:
             query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
         query += "\n            ORDER BY SYMBOL"
