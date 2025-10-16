@@ -59,7 +59,7 @@ def main():
     cur = conn.cursor()
     cur.execute("""
         SELECT SYMBOL, IPO_DATE
-        FROM ETL_WATERMARK
+        FROM ETL_WATERMARKS
         WHERE TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
           AND API_ELIGIBLE = 'YES'
           AND STATUS = 'Active'
@@ -81,7 +81,7 @@ def main():
         if not found_data:
             # Update watermark to set API_ELIGIBLE = 'SUS'
             cur.execute("""
-                UPDATE ETL_WATERMARK
+                UPDATE ETL_WATERMARKS
                 SET API_ELIGIBLE = 'SUS', UPDATED_AT = CURRENT_TIMESTAMP()
                 WHERE SYMBOL = %s AND TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
             """, (symbol,))
