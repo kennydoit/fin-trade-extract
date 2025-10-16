@@ -4,7 +4,8 @@ import requests
 import pandas as pd
 import snowflake.connector
 import boto3
-import json
+import csv
+from io import StringIO
 
 # Constants
 # Constants
@@ -15,14 +16,28 @@ START_QUARTER = 1
 TODAY = datetime.date.today()
 S3_PREFIX = "earnings_call_transcript/"
 def upload_to_s3_transcript(symbol: str, year: int, quarter: int, data: dict, s3_client, bucket: str) -> bool:
-    """Upload transcript data to S3 as JSON."""
+    """Upload transcript data to S3 as CSV, including sentiment score."""
     try:
-        s3_key = f"{S3_PREFIX}{symbol}_{year}Q{quarter}.json"
+        s3_key = f"{S3_PREFIX}{symbol}_{year}Q{quarter}.csv"
+        output = StringIO()
+        writer = csv.writer(output)
+        # Write header
+        writer.writerow(["SYMBOL", "QUARTER", "TRANSCRIPT_DATE", "TRANSCRIPT_TEXT", "SPEAKER", "ROLE", "SENTIMENT"])
+        for entry in data["transcript"]:
+            writer.writerow([
+                symbol,
+                f"{year}Q{quarter}",
+                entry.get("date", ""),
+                entry.get("content", entry.get("text", "")),
+                entry.get("speaker", ""),
+                entry.get("title", entry.get("role", "")),
+                entry.get("sentiment", "")
+            ])
         s3_client.put_object(
             Bucket=bucket,
             Key=s3_key,
-            Body=json.dumps(data).encode('utf-8'),
-            ContentType='application/json'
+            Body=output.getvalue().encode('utf-8'),
+            ContentType='text/csv'
         )
         print(f"✅ Uploaded: s3://{bucket}/{s3_key}")
         return True
@@ -107,7 +122,7 @@ def main():
         found_data = False
         for year, quarter in quarters:
             data = fetch_transcript(symbol, year, quarter, api_key)
-            if data and "transcript" in data:
+            if data and "transcript" in data and data["transcript"]:
                 print(f"API successful for {symbol} {year}Q{quarter}")
                 found_data = True
                 upload_to_s3_transcript(symbol, year, quarter, data, s3_client, bucket)
