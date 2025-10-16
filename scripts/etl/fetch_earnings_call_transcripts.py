@@ -75,10 +75,11 @@ def main():
         for year, quarter in quarters:
             data = fetch_transcript(symbol, year, quarter)
             if data and "transcript" in data:
-                # Save data to S3 or local as per your pattern
+                print(f"API successful for {symbol}")
                 found_data = True
                 # ... (save logic here)
         if not found_data:
+            print(f"⚠️  No earnings call transcript data for {symbol}")
             # Update watermark to set API_ELIGIBLE = 'SUS'
             cur.execute("""
                 UPDATE ETL_WATERMARKS
