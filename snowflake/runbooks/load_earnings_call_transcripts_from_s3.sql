@@ -1,14 +1,14 @@
--- ============================================================================
--- Load Earnings Call Transcripts Data from S3 to Snowflake
---
--- Purpose: Loads earnings call transcript data from S3 into Snowflake
--- Source: Alpha Vantage EARNINGS_CALL_TRANSCRIPT API endpoint
--- Destination: FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPTS
--- Update Strategy: MERGE (upsert based on SYMBOL + QUARTER)
--- ============================================================================
 
 USE DATABASE FIN_TRADE_EXTRACT;
-USE SCHEMA RAW;
+CREATE OR REPLACE TRANSIENT TABLE EARNINGS_CALL_TRANSCRIPT_STAGING (
+    SYMBOL VARCHAR(20),
+    QUARTER VARCHAR(8),
+    TRANSCRIPT_DATE VARCHAR(32),
+    TRANSCRIPT_TEXT STRING,
+    SPEAKER STRING,
+    ROLE STRING,
+    SENTIMENT VARCHAR(32)
+);
 USE WAREHOUSE FIN_TRADE_WH;
 USE ROLE ETL_ROLE;
 
