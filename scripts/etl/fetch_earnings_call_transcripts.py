@@ -3,13 +3,32 @@ import datetime
 import requests
 import pandas as pd
 import snowflake.connector
+import boto3
+import json
 
+# Constants
 # Constants
 API_KEY = None  # Will be set in main()
 API_URL = "https://www.alphavantage.co/query"
 START_YEAR = 2010
 START_QUARTER = 1
 TODAY = datetime.date.today()
+S3_PREFIX = "earnings_call_transcript/"
+def upload_to_s3_transcript(symbol: str, year: int, quarter: int, data: dict, s3_client, bucket: str) -> bool:
+    """Upload transcript data to S3 as JSON."""
+    try:
+        s3_key = f"{S3_PREFIX}{symbol}_{year}Q{quarter}.json"
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=s3_key,
+            Body=json.dumps(data).encode('utf-8'),
+            ContentType='application/json'
+        )
+        print(f"✅ Uploaded: s3://{bucket}/{s3_key}")
+        return True
+    except Exception as e:
+        print(f"❌ S3 upload failed for {symbol} {year}Q{quarter}: {e}")
+        return False
 
 def get_quarters(start_date, end_date):
     """Generate (year, quarter) tuples from start_date to end_date."""
@@ -46,6 +65,10 @@ def fetch_transcript(symbol, year, quarter, api_key):
     return None
 
 def main():
+    # Get API key from environment (strict)
+    api_key = os.environ["ALPHAVANTAGE_API_KEY"]
+    bucket = os.environ["S3_BUCKET"]
+    s3_client = boto3.client("s3")
     # Get API key from environment (strict)
     api_key = os.environ["ALPHAVANTAGE_API_KEY"]
     # Connect to Snowflake and get eligible symbols
@@ -85,9 +108,11 @@ def main():
         for year, quarter in quarters:
             data = fetch_transcript(symbol, year, quarter, api_key)
             if data and "transcript" in data:
-                print(f"API successful for {symbol}")
+                print(f"API successful for {symbol} {year}Q{quarter}")
                 found_data = True
-                # ... (save logic here)
+                upload_to_s3_transcript(symbol, year, quarter, data, s3_client, bucket)
+            else:
+                print(f"API failed for {symbol} {year}Q{quarter}")
         if not found_data:
             print(f"⚠️  No earnings call transcript data for {symbol}")
             # Update watermark to set API_ELIGIBLE = 'SUS'
