@@ -5,7 +5,7 @@ import pandas as pd
 import snowflake.connector
 
 # Constants
-API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
+API_KEY = None  # Will be set in main()
 API_URL = "https://www.alphavantage.co/query"
 START_YEAR = 2010
 START_QUARTER = 1
@@ -33,12 +33,12 @@ def first_full_quarter_after(date):
         year += 1
     return datetime.date(year, month, 1)
 
-def fetch_transcript(symbol, year, quarter):
+def fetch_transcript(symbol, year, quarter, api_key):
     params = {
         "function": "EARNINGS_CALL_TRANSCRIPT",
         "symbol": symbol,
         "quarter": f"{year}Q{quarter}",
-        "apikey": API_KEY
+        "apikey": api_key
     }
     response = requests.get(API_URL, params=params)
     if response.status_code == 200 and response.json():
@@ -46,6 +46,8 @@ def fetch_transcript(symbol, year, quarter):
     return None
 
 def main():
+    # Get API key from environment (strict)
+    api_key = os.environ["ALPHAVANTAGE_API_KEY"]
     # Connect to Snowflake and get eligible symbols
     conn = snowflake.connector.connect(
         user=os.getenv("SNOWFLAKE_USER"),
@@ -81,7 +83,7 @@ def main():
         quarters = get_quarters(start_date, TODAY)
         found_data = False
         for year, quarter in quarters:
-            data = fetch_transcript(symbol, year, quarter)
+            data = fetch_transcript(symbol, year, quarter, api_key)
             if data and "transcript" in data:
                 print(f"API successful for {symbol}")
                 found_data = True
