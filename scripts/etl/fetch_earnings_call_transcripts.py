@@ -1,3 +1,14 @@
+def cleanup_s3_bucket(bucket: str, prefix: str, s3_client) -> int:
+    """Delete all existing files in the S3 prefix."""
+    deleted = 0
+    paginator = s3_client.get_paginator('list_objects_v2')
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        if 'Contents' in page:
+            objects = [{'Key': obj['Key']} for obj in page['Contents']]
+            s3_client.delete_objects(Bucket=bucket, Delete={'Objects': objects})
+            deleted += len(objects)
+    print(f"🧹 Cleaned up S3 bucket: s3://{bucket}/{prefix} ({deleted} files deleted)")
+    return deleted
 import os
 import datetime
 import requests
@@ -84,6 +95,8 @@ def main():
     api_key = os.environ["ALPHAVANTAGE_API_KEY"]
     bucket = os.environ["S3_BUCKET"]
     s3_client = boto3.client("s3")
+    # Clean up S3 bucket before starting
+    cleanup_s3_bucket(bucket, S3_PREFIX, s3_client)
     # Get API key from environment (strict)
     api_key = os.environ["ALPHAVANTAGE_API_KEY"]
     # Connect to Snowflake and get eligible symbols
