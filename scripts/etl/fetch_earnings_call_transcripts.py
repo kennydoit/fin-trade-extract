@@ -37,8 +37,7 @@ def fetch_transcript(symbol, year, quarter):
     params = {
         "function": "EARNINGS_CALL_TRANSCRIPT",
         "symbol": symbol,
-        "year": year,
-        "quarter": quarter,
+        "quarter": f"{year}Q{quarter}",
         "apikey": API_KEY
     }
     response = requests.get(API_URL, params=params)
@@ -57,13 +56,22 @@ def main():
         schema="RAW"
     )
     cur = conn.cursor()
-    cur.execute("""
+    max_symbols = os.getenv("MAX_SYMBOLS")
+    try:
+        max_symbols = int(max_symbols) if max_symbols else None
+    except Exception:
+        max_symbols = None
+
+    query = """
         SELECT SYMBOL, IPO_DATE
         FROM ETL_WATERMARKS
         WHERE TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
           AND API_ELIGIBLE = 'YES'
           AND STATUS = 'Active'
-    """)
+    """
+    if max_symbols:
+        query += f"\n        LIMIT {max_symbols}"
+    cur.execute(query)
     rows = cur.fetchall()
     for symbol, ipo_date in rows:
         if ipo_date is None or ipo_date < datetime.date(START_YEAR, 1, 1):
