@@ -46,7 +46,8 @@ class WatermarkETLManager:
     
     def get_symbols_to_process(self, exchange_filter: Optional[str] = None,
                                max_symbols: Optional[int] = None,
-                               skip_recent_hours: Optional[int] = None) -> List[Dict]:
+                               skip_recent_hours: Optional[int] = None,
+                               consecutive_failure_threshold: Optional[int] = None) -> List[Dict]:
         """
         Get symbols to process from ETL_WATERMARKS table.
         
@@ -82,21 +83,22 @@ class WatermarkETLManager:
                    OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
         """
         
+        # Omit symbols with too many consecutive failures
+        if consecutive_failure_threshold is not None:
+            query += f"""
+              AND (CONSECUTIVE_FAILURES IS NULL OR CONSECUTIVE_FAILURES < {consecutive_failure_threshold})
+            """
         # Skip recently processed symbols if requested
         if skip_recent_hours:
             query += f"""
               AND (LAST_SUCCESSFUL_RUN IS NULL 
                    OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
             """
-        
         if exchange_filter:
             query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
-        
         query += "\n            ORDER BY SYMBOL"
-        
         if max_symbols:
             query += f"\n            LIMIT {max_symbols}"
-        
         logger.info(f"📊 Querying watermarks for {self.table_name}...")
         logger.info(f"📅 Fundamentals logic: Only symbols with LAST_FISCAL_DATE older than 135 days (or NULL)")
         if exchange_filter:
@@ -105,6 +107,8 @@ class WatermarkETLManager:
             logger.info(f"🔒 Symbol limit: {max_symbols}")
         if skip_recent_hours:
             logger.info(f"⏭️  Skip recent: {skip_recent_hours} hours")
+        if consecutive_failure_threshold is not None:
+            logger.info(f"❌ Omit symbols with >= {consecutive_failure_threshold} consecutive failures")
         
         cursor = self.connection.cursor()
         cursor.execute(query)
@@ -518,7 +522,9 @@ def upload_to_s3(data: Dict, s3_client, bucket: str, prefix: str) -> bool:
 def main():
     """Main ETL execution."""
     logger.info("🚀 Starting Watermark-Based Balance Sheet ETL")
-    
+    consecutive_failure_threshold = int(os.environ.get('CONSECUTIVE_FAILURE_THRESHOLD', 3))
+    logger.info(f"❌ Omit symbols with >= {consecutive_failure_threshold} consecutive failures")
+
     # Get configuration from environment
     api_key = os.environ['ALPHAVANTAGE_API_KEY']
     s3_bucket = os.environ.get('S3_BUCKET', 'fin-trade-craft-landing')
@@ -559,7 +565,8 @@ def main():
         symbols_to_process = watermark_manager.get_symbols_to_process(
             exchange_filter=exchange_filter,
             max_symbols=max_symbols,
-            skip_recent_hours=skip_recent_hours
+            skip_recent_hours=skip_recent_hours,
+            consecutive_failure_threshold=consecutive_failure_threshold
         )
     finally:
         # CRITICAL: Close Snowflake connection immediately after getting symbols

@@ -162,8 +162,17 @@ class WatermarkETLManager:
                 """)
             logger.info(f"✅ Bulk updated {len(successful_symbols)} successful watermarks (with fiscal dates)")
 
-        # No failed_symbols update; let the data decide API_ELIGIBLE status
-        
+        # Increment CONSECUTIVE_FAILURES for failed symbols
+        if failed_symbols:
+            logger.info(f"❌ Updating {len(failed_symbols)} failed symbols (incrementing CONSECUTIVE_FAILURES)...")
+            for symbol in failed_symbols:
+                cursor.execute(f"""
+                    UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+                    SET CONSECUTIVE_FAILURES = COALESCE(CONSECUTIVE_FAILURES, 0) + 1,
+                        UPDATED_AT = CURRENT_TIMESTAMP()
+                    WHERE TABLE_NAME = '{self.table_name}'
+                      AND SYMBOL = '{symbol}'
+                """)
         cursor.close()
 
 
