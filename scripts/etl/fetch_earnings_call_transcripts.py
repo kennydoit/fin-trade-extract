@@ -1,13 +1,14 @@
-def cleanup_s3_bucket(bucket: str, prefix: str, s3_client) -> int:
-    """Delete all existing files in the S3 prefix."""
+def cleanup_s3_json(bucket: str, prefix: str, s3_client) -> int:
+    """Delete all .json files in the S3 prefix."""
     deleted = 0
     paginator = s3_client.get_paginator('list_objects_v2')
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         if 'Contents' in page:
-            objects = [{'Key': obj['Key']} for obj in page['Contents']]
-            s3_client.delete_objects(Bucket=bucket, Delete={'Objects': objects})
-            deleted += len(objects)
-    print(f"🧹 Cleaned up S3 bucket: s3://{bucket}/{prefix} ({deleted} files deleted)")
+            json_objects = [obj for obj in page['Contents'] if obj['Key'].endswith('.json')]
+            if json_objects:
+                s3_client.delete_objects(Bucket=bucket, Delete={'Objects': [{'Key': obj['Key']} for obj in json_objects]})
+                deleted += len(json_objects)
+    print(f"🧹 Cleaned up S3 bucket: s3://{bucket}/{prefix} ({deleted} .json files deleted)")
     return deleted
 import os
 import datetime
@@ -27,28 +28,14 @@ START_QUARTER = 1
 TODAY = datetime.date.today()
 S3_PREFIX = "earnings_call_transcript/"
 def upload_to_s3_transcript(symbol: str, year: int, quarter: int, data: dict, s3_client, bucket: str) -> bool:
-    """Upload transcript data to S3 as CSV, including sentiment score. All fields quoted for robustness."""
+    """Upload transcript data to S3 as JSON."""
     try:
-        s3_key = f"{S3_PREFIX}{symbol}_{year}Q{quarter}.csv"
-        output = StringIO()
-        writer = csv.writer(output, quoting=csv.QUOTE_ALL)
-        # Write header
-        writer.writerow(["SYMBOL", "QUARTER", "TRANSCRIPT_DATE", "TRANSCRIPT_TEXT", "SPEAKER", "ROLE", "SENTIMENT"])
-        for entry in data["transcript"]:
-            writer.writerow([
-                symbol,
-                f"{year}Q{quarter}",
-                entry.get("date", ""),
-                entry.get("content", entry.get("text", "")),
-                entry.get("speaker", ""),
-                entry.get("title", entry.get("role", "")),
-                entry.get("sentiment", "")
-            ])
+        s3_key = f"{S3_PREFIX}{symbol}_{year}Q{quarter}.json"
         s3_client.put_object(
             Bucket=bucket,
             Key=s3_key,
-            Body=output.getvalue().encode('utf-8'),
-            ContentType='text/csv'
+            Body=json.dumps(data).encode('utf-8'),
+            ContentType='application/json'
         )
         print(f"✅ Uploaded: s3://{bucket}/{s3_key}")
         return True
@@ -95,8 +82,8 @@ def main():
     api_key = os.environ["ALPHAVANTAGE_API_KEY"]
     bucket = os.environ["S3_BUCKET"]
     s3_client = boto3.client("s3")
-    # Clean up S3 bucket before starting
-    cleanup_s3_bucket(bucket, S3_PREFIX, s3_client)
+    # Clean up .json files in S3 bucket before starting
+    cleanup_s3_json(bucket, S3_PREFIX, s3_client)
     # Get API key from environment (strict)
     api_key = os.environ["ALPHAVANTAGE_API_KEY"]
     # Connect to Snowflake and get eligible symbols
