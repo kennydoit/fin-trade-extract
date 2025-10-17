@@ -124,11 +124,13 @@ def main():
         for year, quarter in quarters:
             data = fetch_transcript(symbol, year, quarter, api_key)
             if data and "transcript" in data and data["transcript"]:
-                print(f"API successful for {symbol} {year}Q{quarter}")
+                # print(f"API successful for {symbol} {year}Q{quarter}")
+                pass
                 found_data = True
                 upload_to_s3_transcript(symbol, year, quarter, data, s3_client, bucket)
             else:
-                print(f"API failed for {symbol} {year}Q{quarter}")
+                # print(f"API failed for {symbol} {year}Q{quarter}")
+                pass
         if not found_data:
             print(f"⚠️  No earnings call transcript data for {symbol}")
             # Update watermark to set API_ELIGIBLE = 'SUS'
