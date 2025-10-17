@@ -45,5 +45,4 @@ FROM (
 )
 GROUP BY tdata:quarter, tdata:symbol, tdata:transcript[0]:sentiment;
 
--- Example query to preview split-out data
-SELECT * FROM FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT_SPLIT LIMIT 10;
+
