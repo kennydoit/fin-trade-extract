@@ -31,7 +31,7 @@ CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGE
   );
 
 -- Step 2: List files in stage to verify content
-LIST @BALANCE_SHEET_STAGE;
+-- LIST @BALANCE_SHEET_STAGE;
 
 -- Step 3: Create the target table if it doesn't exist
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET (
@@ -141,69 +141,6 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING (
 COPY INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING
 FROM @BALANCE_SHEET_STAGE
 ON_ERROR = 'CONTINUE';
-
--- Step 6: Show row counts and column names
-SELECT 'Row Count Check' as info;
-SELECT 
-    COUNT(*) as total_rows,
-    COUNT(DISTINCT SYMBOL) as unique_symbols,
-    COUNT(DISTINCT FISCAL_DATE_ENDING) as unique_dates
-FROM BALANCE_SHEET_STAGING;
-
--- Diagnostic: Show actual column values to verify load
-SELECT 'Sample Data' as info;
-SELECT SYMBOL, FISCAL_DATE_ENDING, PERIOD_TYPE, REPORTED_CURRENCY
-FROM BALANCE_SHEET_STAGING
-LIMIT 5;
-
--- Step 7: Data Quality Checks
--- Check for missing required fields
-SELECT 
-    'Missing Required Fields' as check_name,
-    COUNT(*) as issue_count
-FROM BALANCE_SHEET_STAGING
-WHERE SYMBOL IS NULL 
-   OR FISCAL_DATE_ENDING IS NULL 
-   OR PERIOD_TYPE IS NULL;
-
--- Check for invalid dates
-SELECT 
-    'Invalid Dates' as check_name,
-    COUNT(*) as issue_count
-FROM BALANCE_SHEET_STAGING
-WHERE TRY_TO_DATE(FISCAL_DATE_ENDING) IS NULL 
-  AND FISCAL_DATE_ENDING IS NOT NULL;
-
--- Check for invalid period types
-SELECT 
-    'Invalid Period Types' as check_name,
-    COUNT(*) as issue_count
-FROM BALANCE_SHEET_STAGING
-WHERE PERIOD_TYPE NOT IN ('annual', 'quarterly')
-  AND PERIOD_TYPE IS NOT NULL;
-
--- Check for potential duplicates
-SELECT 
-    'Duplicate Keys' as check_name,
-    COUNT(*) as issue_count
-FROM (
-    SELECT SYMBOL, FISCAL_DATE_ENDING, PERIOD_TYPE, COUNT(*) as cnt
-    FROM BALANCE_SHEET_STAGING
-    GROUP BY SYMBOL, FISCAL_DATE_ENDING, PERIOD_TYPE
-    HAVING COUNT(*) > 1
-);
-
--- Check data distribution by period type
-SELECT 
-    PERIOD_TYPE,
-    COUNT(*) as count,
-    COUNT(DISTINCT SYMBOL) as unique_symbols
-FROM BALANCE_SHEET_STAGING
-GROUP BY PERIOD_TYPE
-ORDER BY PERIOD_TYPE;
-
--- Step 8: Preview staging data
-SELECT * FROM BALANCE_SHEET_STAGING LIMIT 10;
 
 -- Step 9: MERGE staging data into target table
 MERGE INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET target
@@ -336,53 +273,6 @@ WHEN NOT MATCHED THEN
         source.COMMON_STOCK, source.COMMON_STOCK_SHARES_OUTSTANDING,
         source.SYMBOL_ID, source.LOAD_DATE
     );
-
--- Step 10: Show summary statistics
-SELECT 
-    'Total Balance Sheet Records' as metric,
-    COUNT(*) as value
-FROM BALANCE_SHEET
-UNION ALL
-SELECT 
-    'Unique Symbols',
-    COUNT(DISTINCT SYMBOL)
-FROM BALANCE_SHEET
-UNION ALL
-SELECT 
-    'Annual Reports',
-    COUNT(*)
-FROM BALANCE_SHEET
-WHERE PERIOD_TYPE = 'annual'
-UNION ALL
-SELECT 
-    'Quarterly Reports',
-    COUNT(*)
-FROM BALANCE_SHEET
-WHERE PERIOD_TYPE = 'quarterly';
-
--- Step 11: Show most recent data per symbol
-SELECT 
-    SYMBOL,
-    PERIOD_TYPE,
-    MAX(FISCAL_DATE_ENDING) as latest_fiscal_date,
-    COUNT(*) as total_records
-FROM BALANCE_SHEET
-GROUP BY SYMBOL, PERIOD_TYPE
-ORDER BY latest_fiscal_date DESC
-LIMIT 20;
-
--- Step 12: Show symbols with most complete data
-SELECT 
-    SYMBOL,
-    COUNT(DISTINCT FISCAL_DATE_ENDING) as unique_dates,
-    MIN(FISCAL_DATE_ENDING) as earliest_date,
-    MAX(FISCAL_DATE_ENDING) as latest_date,
-    SUM(CASE WHEN PERIOD_TYPE = 'annual' THEN 1 ELSE 0 END) as annual_count,
-    SUM(CASE WHEN PERIOD_TYPE = 'quarterly' THEN 1 ELSE 0 END) as quarterly_count
-FROM BALANCE_SHEET
-GROUP BY SYMBOL
-ORDER BY unique_dates DESC
-LIMIT 20;
 
 -- Step 13: Cleanup staging table
 DROP TABLE IF EXISTS BALANCE_SHEET_STAGING;

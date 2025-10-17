@@ -31,7 +31,7 @@ CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGE
   );
 
 -- Step 2: List files in stage to verify content
-LIST @CASH_FLOW_STAGE;
+-- LIST @CASH_FLOW_STAGE;
 
 -- Step 3: Create the target table if it doesn't exist
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.CASH_FLOW (
@@ -137,47 +137,6 @@ FILE_FORMAT = (
 PATTERN = '.*\.csv'
 ON_ERROR = 'CONTINUE'
 FORCE = TRUE;
-
--- Step 6: Show staging statistics
-SELECT 
-    'Staging Statistics' as step,
-    COUNT(*) as total_rows,
-    COUNT(DISTINCT SYMBOL) as unique_symbols,
-    COUNT(CASE WHEN PERIOD_TYPE = 'annual' THEN 1 END) as annual_reports,
-    COUNT(CASE WHEN PERIOD_TYPE = 'quarterly' THEN 1 END) as quarterly_reports,
-    MIN(TRY_TO_DATE(FISCAL_DATE_ENDING, 'YYYY-MM-DD')) as earliest_date,
-    MAX(TRY_TO_DATE(FISCAL_DATE_ENDING, 'YYYY-MM-DD')) as latest_date
-FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGING;
-
--- Step 7: Data quality checks
-SELECT 'Data Quality Check - Missing Keys' as check_type,
-       COUNT(*) as issues
-FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGING
-WHERE SYMBOL IS NULL 
-   OR FISCAL_DATE_ENDING IS NULL
-   OR PERIOD_TYPE IS NULL;
-
-SELECT 'Data Quality Check - Invalid Dates' as check_type,
-       COUNT(*) as issues
-FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGING
-WHERE TRY_TO_DATE(FISCAL_DATE_ENDING, 'YYYY-MM-DD') IS NULL;
-
-SELECT 'Data Quality Check - Invalid Period Types' as check_type,
-       COUNT(*) as issues
-FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGING
-WHERE PERIOD_TYPE NOT IN ('annual', 'quarterly');
-
--- Step 8: Show sample of staged data
-SELECT 'Sample Staged Data' as step,
-       SYMBOL,
-       FISCAL_DATE_ENDING,
-       PERIOD_TYPE,
-       OPERATING_CASHFLOW,
-       CASHFLOW_FROM_INVESTMENT,
-       CASHFLOW_FROM_FINANCING,
-       NET_INCOME
-FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGING
-LIMIT 5;
 
 -- Step 9: Merge staged data into target table
 MERGE INTO FIN_TRADE_EXTRACT.RAW.CASH_FLOW target
@@ -298,33 +257,6 @@ WHEN NOT MATCHED THEN INSERT (
     source.PROCEEDS_FROM_SALE_OF_PPE, source.CHANGE_IN_CASH_AND_CASH_EQUIVALENTS,
     source.CHANGE_IN_EXCHANGE_RATE, source.NET_INCOME, source.SYMBOL_ID, source.LOAD_DATE
 );
-
--- Step 10: Show merge results
-SELECT 
-    'Merge Complete' as status,
-    COUNT(*) as total_records,
-    COUNT(DISTINCT SYMBOL) as unique_symbols,
-    COUNT(CASE WHEN PERIOD_TYPE = 'annual' THEN 1 END) as annual_records,
-    COUNT(CASE WHEN PERIOD_TYPE = 'quarterly' THEN 1 END) as quarterly_records,
-    MIN(FISCAL_DATE_ENDING) as earliest_date,
-    MAX(FISCAL_DATE_ENDING) as latest_date,
-    MAX(LOAD_DATE) as load_date
-FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW;
-
--- Step 11: Sample final data
-SELECT 
-    'Final Data Sample' as step,
-    SYMBOL,
-    FISCAL_DATE_ENDING,
-    PERIOD_TYPE,
-    OPERATING_CASHFLOW,
-    CASHFLOW_FROM_INVESTMENT,
-    CASHFLOW_FROM_FINANCING,
-    NET_INCOME,
-    LOAD_DATE
-FROM FIN_TRADE_EXTRACT.RAW.CASH_FLOW
-ORDER BY SYMBOL, FISCAL_DATE_ENDING DESC, PERIOD_TYPE
-LIMIT 10;
 
 -- Cleanup staging table
 DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.CASH_FLOW_STAGING;

@@ -37,7 +37,7 @@ CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGE
   );
 
 -- 2) List files in stage to verify content
-LIST @COMPANY_OVERVIEW_STAGE;
+-- LIST @COMPANY_OVERVIEW_STAGE;
 
 -- 3) Create main table for company overview data
 -- ⚠️ CRITICAL: DO NOT DROP - Would delete all company overview data!
@@ -263,32 +263,6 @@ FILE_FORMAT = (TYPE = 'CSV' SKIP_HEADER = 1)
 PATTERN = '.*\.csv'
 ON_ERROR = CONTINUE;
 
--- Debug: Check staging data load
-SELECT COUNT(*) as staging_rows_loaded FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
-
--- 6) Calculate symbol_id using same logic as other tables (hash-based approach)
-UPDATE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
-SET symbol_id = ABS(HASH(Symbol)) % 1000000000
-WHERE Symbol IS NOT NULL;
-
--- Debug: Check symbol_id calculation and data distribution
-SELECT 
-    Symbol,
-    symbol_id,
-    Name,
-    Sector,
-    Industry,
-    LatestQuarter
-FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
-ORDER BY Symbol
-LIMIT 20;
-
--- 7) Data quality validation - remove bad records
-DELETE FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
-WHERE Symbol IS NULL 
-   OR symbol_id IS NULL
-   OR Symbol = 'Symbol';  -- Header row sometimes gets through
-
 -- 8) Remove duplicates (keep most recent file's data for each symbol)
 DELETE FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
 WHERE (Symbol, source_filename) IN (
@@ -454,42 +428,6 @@ WHEN NOT MATCHED THEN
         source.SharesOutstanding, source.DividendDate, source.ExDividendDate,
         CURRENT_DATE()
     );
-
--- 10) Final validation and reporting
-SELECT 
-    Sector,
-    COUNT(*) as company_count,
-    AVG(MarketCapitalization) as avg_market_cap,
-    AVG(PERatio) as avg_pe_ratio,
-    AVG(DividendYield) as avg_dividend_yield
-FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW 
-WHERE Sector IS NOT NULL
-GROUP BY Sector
-ORDER BY company_count DESC;
-
--- Show summary stats
-SELECT 
-    'Company Overview Load Summary' as summary,
-    COUNT(DISTINCT SYMBOL) as unique_symbols,
-    COUNT(DISTINCT Sector) as unique_sectors,
-    COUNT(DISTINCT Industry) as unique_industries,
-    COUNT(DISTINCT Country) as unique_countries,
-    MIN(LATEST_QUARTER) as earliest_quarter,
-    MAX(LATEST_QUARTER) as latest_quarter
-FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
-
--- Show top companies by market cap
-SELECT 
-    SYMBOL,
-    NAME,
-    SECTOR,
-    MARKET_CAPITALIZATION,
-    PE_RATIO,
-    LATEST_QUARTER
-FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW
-WHERE MARKET_CAPITALIZATION IS NOT NULL
-ORDER BY MARKET_CAPITALIZATION DESC
-LIMIT 10;
 
 -- Cleanup staging table
 DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;

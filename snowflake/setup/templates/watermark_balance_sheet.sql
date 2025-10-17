@@ -53,28 +53,6 @@ WHERE NOT EXISTS (
       AND w.SYMBOL = SYMBOL.SYMBOL
 );
 
--- Show summary of created records
-SELECT 
-    '✅ Balance Sheet Watermarks Created' as status,
-    COUNT(*) as total_records,
-    COUNT(CASE WHEN API_ELIGIBLE = 'YES' THEN 1 END) as eligible_for_api,
-    COUNT(CASE WHEN API_ELIGIBLE = 'NO' THEN 1 END) as not_eligible,
-    COUNT(CASE WHEN API_ELIGIBLE = 'DEL' THEN 1 END) as delisted,
-    COUNT(DISTINCT EXCHANGE) as unique_exchanges
-FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-WHERE TABLE_NAME = 'BALANCE_SHEET';
-
--- Show breakdown by exchange
-SELECT 
-    'Breakdown by Exchange' as info,
-    EXCHANGE,
-    COUNT(*) as total,
-    COUNT(CASE WHEN API_ELIGIBLE = 'YES' THEN 1 END) as eligible
-FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-WHERE TABLE_NAME = 'BALANCE_SHEET'
-GROUP BY EXCHANGE
-ORDER BY total DESC;
-
 SELECT '
 ====================================================================
 BALANCE_SHEET WATERMARKS INITIALIZED

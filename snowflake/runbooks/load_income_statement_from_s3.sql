@@ -31,7 +31,7 @@ CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.INCOME_STATEMENT_STAGE
   );
 
 -- Step 2: List files in stage to verify content
-LIST @INCOME_STATEMENT_STAGE;
+-- LIST @INCOME_STATEMENT_STAGE;
 
 -- Step 3: Create the target table if it doesn't exist
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.INCOME_STATEMENT (
@@ -139,47 +139,6 @@ FILE_FORMAT = (
 PATTERN = '.*\.csv'
 ON_ERROR = 'CONTINUE'
 FORCE = TRUE;
-
--- Step 6: Show staging statistics
-SELECT 
-    'Staging Statistics' as step,
-    COUNT(*) as total_rows,
-    COUNT(DISTINCT SYMBOL) as unique_symbols,
-    COUNT(CASE WHEN PERIOD_TYPE = 'annual' THEN 1 END) as annual_reports,
-    COUNT(CASE WHEN PERIOD_TYPE = 'quarterly' THEN 1 END) as quarterly_reports,
-    MIN(TRY_TO_DATE(FISCAL_DATE_ENDING, 'YYYY-MM-DD')) as earliest_date,
-    MAX(TRY_TO_DATE(FISCAL_DATE_ENDING, 'YYYY-MM-DD')) as latest_date
-FROM FIN_TRADE_EXTRACT.RAW.INCOME_STATEMENT_STAGING;
-
--- Step 7: Data quality checks
-SELECT 'Data Quality Check - Missing Keys' as check_type,
-       COUNT(*) as issues
-FROM FIN_TRADE_EXTRACT.RAW.INCOME_STATEMENT_STAGING
-WHERE SYMBOL IS NULL 
-   OR FISCAL_DATE_ENDING IS NULL
-   OR PERIOD_TYPE IS NULL;
-
-SELECT 'Data Quality Check - Invalid Dates' as check_type,
-       COUNT(*) as issues
-FROM FIN_TRADE_EXTRACT.RAW.INCOME_STATEMENT_STAGING
-WHERE TRY_TO_DATE(FISCAL_DATE_ENDING, 'YYYY-MM-DD') IS NULL;
-
-SELECT 'Data Quality Check - Invalid Period Types' as check_type,
-       COUNT(*) as issues
-FROM FIN_TRADE_EXTRACT.RAW.INCOME_STATEMENT_STAGING
-WHERE PERIOD_TYPE NOT IN ('annual', 'quarterly');
-
--- Step 8: Show sample of staged data
-SELECT 'Sample Staged Data' as step,
-       SYMBOL,
-       FISCAL_DATE_ENDING,
-       PERIOD_TYPE,
-       TOTAL_REVENUE,
-       OPERATING_INCOME,
-       NET_INCOME,
-       EBITDA
-FROM FIN_TRADE_EXTRACT.RAW.INCOME_STATEMENT_STAGING
-LIMIT 5;
 
 -- Step 9: Merge staged data into target table
 MERGE INTO FIN_TRADE_EXTRACT.RAW.INCOME_STATEMENT target

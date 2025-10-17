@@ -37,7 +37,7 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING (
 );
 
 -- Debug: Check what files are in the stage
-LIST @LISTING_STATUS_STAGE;
+-- LIST @LISTING_STATUS_STAGE;
 
 -- Load ALL CSV files (both active and delisted automatically)
 COPY INTO FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING (symbol, name, exchange, assetType, ipoDate, delistingDate, status, source_file)
@@ -51,32 +51,12 @@ ON_ERROR = CONTINUE;
 -- Note: PARALLEL parameter not supported for external stages (S3)
 -- Snowflake automatically parallelizes based on number of files
 
--- Debug: Check how many rows were loaded from each file
-SELECT 
-    source_file,
-    COUNT(*) as rows_loaded 
-FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING 
-GROUP BY source_file;
-
-SELECT COUNT(*) as total_rows_loaded FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING;
-
 -- Add load_date to staging data (use current date)
 UPDATE FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING SET load_date = CURRENT_DATE();
 
 -- Remove bad rows
 DELETE FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING WHERE symbol IS NULL OR symbol = '#NAME?';
 
--- Debug: Check for duplicate symbols across files
-SELECT 
-    symbol,
-    COUNT(*) as occurrence_count,
-    COUNT(DISTINCT source_file) as file_count,
-    LISTAGG(DISTINCT source_file, ', ') as files
-FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING 
-GROUP BY symbol
-HAVING COUNT(*) > 1
-ORDER BY occurrence_count DESC
-LIMIT 10;
 
 -- Create deduplicated staging data
 DELETE FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING 
@@ -86,8 +66,6 @@ WHERE (symbol, source_file) NOT IN (
   GROUP BY symbol
 );
 
--- Debug: Check staging data after deduplication
-SELECT COUNT(*) as rows_after_dedup FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS_STAGING;
 
 -- Simple merge without complex subqueries
 MERGE INTO FIN_TRADE_EXTRACT.RAW.LISTING_STATUS tgt
@@ -107,39 +85,3 @@ WHEN NOT MATCHED THEN INSERT (
   src.symbol, src.name, src.exchange, src.assetType, src.ipoDate, src.delistingDate, src.status, src.load_date
 );
 
--- Verify final results
-SELECT COUNT(*) AS total_symbols FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS;
-
--- Check distribution by status
-SELECT 
-    status,
-    COUNT(*) as symbol_count
-FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
-GROUP BY status
-ORDER BY symbol_count DESC;
-
--- Check for delisted symbols count
-SELECT 
-    'DELISTED SYMBOLS' as category,
-    COUNT(*) as count
-FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
-WHERE delistingDate IS NOT NULL AND delistingDate != '';
-
--- Check for active symbols count
-SELECT 
-    'ACTIVE SYMBOLS' as category,
-    COUNT(*) as count
-FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
-WHERE (delistingDate IS NULL OR delistingDate = '') AND status = 'Active';
-
--- Sample active records
-SELECT 'ACTIVE SAMPLES' as type, symbol, name, exchange, status, ipoDate, delistingDate, load_date
-FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
-WHERE status = 'Active' AND (delistingDate IS NULL OR delistingDate = '')
-ORDER BY symbol LIMIT 10;
-
--- Sample delisted records
-SELECT 'DELISTED SAMPLES' as type, symbol, name, exchange, status, ipoDate, delistingDate, load_date
-FROM FIN_TRADE_EXTRACT.RAW.LISTING_STATUS 
-WHERE delistingDate IS NOT NULL AND delistingDate != ''
-ORDER BY symbol LIMIT 10;

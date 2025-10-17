@@ -31,7 +31,7 @@ CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.TIME_SERIES_STAGE
   );
 
 -- Step 2: List files in stage to verify content
-LIST @TIME_SERIES_STAGE;
+-- LIST @TIME_SERIES_STAGE;
 
 -- Step 3: Create the target table if it doesn't exist
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.TIME_SERIES_DAILY_ADJUSTED (
@@ -190,51 +190,6 @@ WHEN NOT MATCHED THEN
         source.DIVIDEND_AMOUNT, source.SPLIT_COEFFICIENT,
         source.SYMBOL_ID, source.LOAD_DATE
     );
-
--- Step 10: Show summary statistics
-SELECT 
-    'Total Time Series Records' as metric,
-    CAST(COUNT(*) AS VARCHAR) as value
-FROM TIME_SERIES_DAILY_ADJUSTED
-UNION ALL
-SELECT 
-    'Unique Symbols',
-    CAST(COUNT(DISTINCT SYMBOL) AS VARCHAR)
-FROM TIME_SERIES_DAILY_ADJUSTED
-UNION ALL
-SELECT 
-    'Earliest Date',
-    CAST(TO_CHAR(MIN(DATE), 'YYYY-MM-DD') AS VARCHAR)
-FROM TIME_SERIES_DAILY_ADJUSTED
-UNION ALL
-SELECT 
-    'Latest Date',
-    CAST(TO_CHAR(MAX(DATE), 'YYYY-MM-DD') AS VARCHAR)
-FROM TIME_SERIES_DAILY_ADJUSTED;
-
--- Step 11: Show most recent data per symbol
-SELECT 
-    SYMBOL,
-    MAX(DATE) as latest_date,
-    COUNT(*) as total_records,
-    MIN(DATE) as earliest_date,
-    DATEDIFF('day', MIN(DATE), MAX(DATE)) as days_of_data
-FROM TIME_SERIES_DAILY_ADJUSTED
-GROUP BY SYMBOL
-ORDER BY latest_date DESC
-LIMIT 20;
-
--- Step 12: Show symbols with most data points
-SELECT 
-    SYMBOL,
-    COUNT(*) as data_points,
-    MIN(DATE) as earliest_date,
-    MAX(DATE) as latest_date,
-    ROUND(AVG(VOLUME), 0) as avg_daily_volume
-FROM TIME_SERIES_DAILY_ADJUSTED
-GROUP BY SYMBOL
-ORDER BY data_points DESC
-LIMIT 20;
 
 -- Step 13: Cleanup staging table
 DROP TABLE IF EXISTS TIME_SERIES_STAGING;
