@@ -1,5 +1,3 @@
-
-
 USE DATABASE FIN_TRADE_EXTRACT;
 USE SCHEMA RAW;
 USE WAREHOUSE FIN_TRADE_WH;
@@ -38,11 +36,14 @@ SELECT
     ABS(HASH(tdata:symbol::STRING)) % 1000000000 AS symbol_id,
     tdata:quarter::STRING AS quarter,
     tdata:symbol::STRING AS symbol,
-    tdata:transcript[0]:sentiment::FLOAT AS sentiment,
-    ARRAY_TO_STRING(ARRAY_AGG(tdata:transcript[0]:content::STRING), ' ') AS transcript_text
+    MAX(transcript_entry:sentiment::FLOAT) AS sentiment,
+    ARRAY_TO_STRING(ARRAY_AGG(transcript_entry:content::STRING), ' ') AS transcript_text
 FROM (
-    SELECT TRANSCRIPT_DATA AS tdata FROM FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT_UNSPLIT
+    SELECT
+        TRANSCRIPT_DATA AS tdata,
+        FLATTEN(INPUT => TRANSCRIPT_DATA:transcript) AS transcript_entry
+    FROM FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT_UNSPLIT
 )
-GROUP BY tdata:quarter, tdata:symbol, tdata:transcript[0]:sentiment;
+GROUP BY tdata:quarter, tdata:symbol;
 
 
