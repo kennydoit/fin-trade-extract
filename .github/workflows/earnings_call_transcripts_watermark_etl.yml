@@ -17,10 +17,6 @@ on:
         description: 'Maximum number of symbols to process (blank = all eligible symbols)'
         required: false
         type: number
-      skip_recent_hours:
-        description: 'Skip symbols processed within this many hours (blank = re-process all)'
-        required: false
-        type: number
       batch_size:
         description: 'Number of symbols to process per batch'
         required: false
@@ -74,7 +70,6 @@ jobs:
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
         EXCHANGE_FILTER: ${{ inputs.exchange_filter }}
         MAX_SYMBOLS: ${{ inputs.max_symbols }}
-        SKIP_RECENT_HOURS: ${{ inputs.skip_recent_hours }}
         BATCH_SIZE: ${{ inputs.batch_size || '50' }}
       run: |
         echo "🚀 Starting watermark-based earnings call transcript ETL..."
