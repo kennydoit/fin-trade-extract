@@ -66,16 +66,30 @@ def first_full_quarter_after(date):
         year += 1
     return datetime.date(year, month, 1)
 
-def fetch_transcript(symbol, year, quarter, api_key):
+import time
+from requests.exceptions import RequestException
+
+def fetch_transcript(symbol, year, quarter, api_key, max_retries=3, backoff=2):
     params = {
         "function": "EARNINGS_CALL_TRANSCRIPT",
         "symbol": symbol,
         "quarter": f"{year}Q{quarter}",
         "apikey": api_key
     }
-    response = requests.get(API_URL, params=params)
-    if response.status_code == 200 and response.json():
-        return response.json()
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(API_URL, params=params, timeout=30)
+            if response.status_code == 200 and response.json():
+                return response.json()
+            else:
+                # Optionally log non-200 responses
+                pass
+        except RequestException as e:
+            # Optionally log error: print(f"Network error for {symbol} {year}Q{quarter}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(backoff ** attempt)
+            else:
+                return None
     return None
 
 def main():
