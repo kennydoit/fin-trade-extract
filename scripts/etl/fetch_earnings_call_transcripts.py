@@ -117,18 +117,21 @@ def main():
     except Exception:
         max_symbols = None
 
+    # New: skip symbols with latest fiscal date within X days (SQL logic)
     query = """
-        SELECT SYMBOL, IPO_DATE
+        SELECT SYMBOL, IPO_DATE, LAST_FISCAL_DATE
         FROM ETL_WATERMARKS
         WHERE TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
           AND API_ELIGIBLE = 'YES'
           AND STATUS = 'Active'
+          AND (LAST_FISCAL_DATE IS NULL 
+               OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
     """
     if max_symbols:
         query += f"\n        LIMIT {max_symbols}"
     cur.execute(query)
     rows = cur.fetchall()
-    for symbol, ipo_date in rows:
+    for symbol, ipo_date, last_fiscal_date in rows:
         if ipo_date is None or ipo_date < datetime.date(START_YEAR, 1, 1):
             start_date = datetime.date(START_YEAR, 1, 1)
         else:
