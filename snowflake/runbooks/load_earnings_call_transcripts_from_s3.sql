@@ -33,17 +33,13 @@ FROM FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT_UNSPLIT;
 -- Create the final split-out table
 CREATE OR REPLACE TABLE FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT AS
 SELECT
-    ABS(HASH(tdata:symbol::STRING)) % 1000000000 AS symbol_id,
-    tdata:quarter::STRING AS quarter,
-    tdata:symbol::STRING AS symbol,
-    MAX(transcript_entry:sentiment::FLOAT) AS sentiment,
-    ARRAY_TO_STRING(ARRAY_AGG(transcript_entry:content::STRING), ' ') AS transcript_text
-FROM (
-    SELECT
-        TRANSCRIPT_DATA AS tdata,
-        FLATTEN(INPUT => TRANSCRIPT_DATA:transcript) AS transcript_entry
-    FROM FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT_UNSPLIT
-)
-GROUP BY tdata:quarter, tdata:symbol;
+    ABS(HASH(TRANSCRIPT_DATA:symbol::STRING)) % 1000000000 AS symbol_id,
+    TRANSCRIPT_DATA:quarter::STRING AS quarter,
+    TRANSCRIPT_DATA:symbol::STRING AS symbol,
+    MAX(transcript_entry.value:sentiment::FLOAT) AS sentiment,
+    ARRAY_TO_STRING(ARRAY_AGG(transcript_entry.value:content::STRING), ' ') AS transcript_text
+FROM FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT_UNSPLIT,
+     LATERAL FLATTEN(INPUT => TRANSCRIPT_DATA:transcript) transcript_entry
+GROUP BY TRANSCRIPT_DATA:quarter, TRANSCRIPT_DATA:symbol;
 
 
