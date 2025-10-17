@@ -17,6 +17,7 @@ import pandas as pd
 import snowflake.connector
 import boto3
 import csv
+import json
 from io import StringIO
 
 # Constants
