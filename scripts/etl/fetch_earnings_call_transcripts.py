@@ -27,11 +27,11 @@ START_QUARTER = 1
 TODAY = datetime.date.today()
 S3_PREFIX = "earnings_call_transcript/"
 def upload_to_s3_transcript(symbol: str, year: int, quarter: int, data: dict, s3_client, bucket: str) -> bool:
-    """Upload transcript data to S3 as CSV, including sentiment score."""
+    """Upload transcript data to S3 as CSV, including sentiment score. All fields quoted for robustness."""
     try:
         s3_key = f"{S3_PREFIX}{symbol}_{year}Q{quarter}.csv"
         output = StringIO()
-        writer = csv.writer(output)
+        writer = csv.writer(output, quoting=csv.QUOTE_ALL)
         # Write header
         writer.writerow(["SYMBOL", "QUARTER", "TRANSCRIPT_DATE", "TRANSCRIPT_TEXT", "SPEAKER", "ROLE", "SENTIMENT"])
         for entry in data["transcript"]:
