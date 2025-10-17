@@ -17,13 +17,8 @@ on:
         description: 'Maximum number of symbols to process (blank = all eligible symbols)'
         required: false
         type: number
-      staleness_days:
-        description: 'Days before data is considered stale (triggers full refresh)'
-        required: false
-        type: number
-        default: 5
-      skip_recent_hours:
-        description: 'Skip symbols processed within this many hours (blank = re-process all)'
+      skip_last_fiscal_days:
+        description: 'Skip symbols with last fiscal date within this many days (blank = re-process all)'
         required: false
         type: number
       batch_size:
@@ -76,8 +71,7 @@ jobs:
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
         EXCHANGE_FILTER: ${{ inputs.exchange_filter }}
         MAX_SYMBOLS: ${{ inputs.max_symbols }}
-        STALENESS_DAYS: ${{ inputs.staleness_days || '5' }}
-        SKIP_RECENT_HOURS: ${{ inputs.skip_recent_hours }}
+        SKIP_LAST_FISCAL_DAYS: ${{ inputs.skip_last_fiscal_days }}
         BATCH_SIZE: ${{ inputs.batch_size || '50' }}
       run: |
         echo "🚀 Starting watermark-based time series ETL..."
