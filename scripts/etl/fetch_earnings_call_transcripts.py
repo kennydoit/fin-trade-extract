@@ -131,6 +131,8 @@ def main():
         query += f"\n        LIMIT {max_symbols}"
     cur.execute(query)
     rows = cur.fetchall()
+        # Initialize a list of symbols not found
+    SYMBOLS_NOT_FOUND = []
     for symbol, ipo_date, last_fiscal_date in rows:
         if ipo_date is None or ipo_date < datetime.date(START_YEAR, 1, 1):
             start_date = datetime.date(START_YEAR, 1, 1)
@@ -149,13 +151,21 @@ def main():
                 # print(f"API failed for {symbol} {year}Q{quarter}")
                 pass
         if not found_data:
+            SYMBOLS_NOT_FOUND.append(symbol)
             print(f"⚠️  No earnings call transcript data for {symbol}")
-            # Update watermark to set API_ELIGIBLE = 'SUS'
-            cur.execute("""
-                UPDATE ETL_WATERMARKS
-                SET API_ELIGIBLE = 'SUS', UPDATED_AT = CURRENT_TIMESTAMP()
-                WHERE SYMBOL = %s AND TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
-            """, (symbol,))
+    # Once all data are loaded or flagged as not found, create a list of symbols
+    # not found and insert into IN() clause
+    # Update watermark to set API_ELIGIBLE = 'SUS'
+    if SYMBOLS_NOT_FOUND:
+        placeholders = ', '.join(['%s'] * len(SYMBOLS_NOT_FOUND))
+        query = f"""
+            UPDATE ETL_WATERMARKS
+            SET API_ELIGIBLE = 'SUS', UPDATED_AT = CURRENT_TIMESTAMP()
+            WHERE SYMBOL IN ({placeholders})
+              AND TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
+        """
+        cur.execute(query, SYMBOLS_NOT_FOUND)
+        print(f"⚠️  No earnings call transcript data for {len(SYMBOLS_NOT_FOUND)} symbols: {SYMBOLS_NOT_FOUND}")
     cur.close()
     conn.close()
 
