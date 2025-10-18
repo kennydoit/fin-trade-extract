@@ -125,7 +125,10 @@ def main():
           AND API_ELIGIBLE = 'YES'
           AND STATUS = 'Active'
           AND (LAST_FISCAL_DATE IS NULL 
-               OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
+               OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE())
+               )
+             AND (LAST_SUCCESSFUL_RUN IS NULL 
+                   OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -168, CURRENT_TIMESTAMP()))
     """
     if max_symbols:
         query += f"\n        LIMIT {max_symbols}"
