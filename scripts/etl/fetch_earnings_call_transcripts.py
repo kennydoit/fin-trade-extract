@@ -1,15 +1,5 @@
-def cleanup_s3_json(bucket: str, prefix: str, s3_client) -> int:
-    """Delete all .json files in the S3 prefix."""
-    deleted = 0
-    paginator = s3_client.get_paginator('list_objects_v2')
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        if 'Contents' in page:
-            json_objects = [obj for obj in page['Contents'] if obj['Key'].endswith('.json')]
-            if json_objects:
-                s3_client.delete_objects(Bucket=bucket, Delete={'Objects': [{'Key': obj['Key']} for obj in json_objects]})
-                deleted += len(json_objects)
-    print(f"🧹 Cleaned up S3 bucket: s3://{bucket}/{prefix} ({deleted} .json files deleted)")
-    return deleted
+
+
 import os
 import datetime
 import requests
@@ -27,6 +17,19 @@ START_YEAR = 2010
 START_QUARTER = 1
 TODAY = datetime.date.today()
 S3_PREFIX = "earnings_call_transcript/"
+
+def cleanup_s3_json(bucket: str, prefix: str, s3_client) -> int:
+    """Delete all .json files in the S3 prefix."""
+    deleted = 0
+    paginator = s3_client.get_paginator('list_objects_v2')
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        if 'Contents' in page:
+            json_objects = [obj for obj in page['Contents'] if obj['Key'].endswith('.json')]
+            if json_objects:
+                s3_client.delete_objects(Bucket=bucket, Delete={'Objects': [{'Key': obj['Key']} for obj in json_objects]})
+                deleted += len(json_objects)
+    print(f"🧹 Cleaned up S3 bucket: s3://{bucket}/{prefix} ({deleted} .json files deleted)")
+    return deleted
 
 def upload_to_s3_transcript(symbol: str, year: int, quarter: int, data: dict, s3_client, bucket: str) -> bool:
     """Upload transcript data to S3 as JSON."""
@@ -92,6 +95,56 @@ def fetch_transcript(symbol, year, quarter, api_key, max_retries=3, backoff=2):
                 return None
     return None
 
+def bulk_update_watermarks(cur, successful_updates, failed_symbols):
+    """
+    Bulk update ETL_WATERMARKS for earnings call transcripts.
+    successful_updates: list of dicts with symbol, first_date, last_date
+    failed_symbols: list of symbols (str)
+    """
+    # Successful updates: batch MERGE
+    if successful_updates:
+        cur.execute("""
+            CREATE TEMPORARY TABLE WATERMARK_UPDATES (
+                SYMBOL VARCHAR(20),
+                FIRST_DATE DATE,
+                LAST_DATE DATE
+            )
+        """)
+        values_list = []
+        for update in successful_updates:
+            values_list.append(
+                f"('{update['symbol']}', TO_DATE('{update['first_date']}', 'YYYY-MM-DD'), TO_DATE('{update['last_date']}', 'YYYY-MM-DD'))"
+            )
+        values_clause = ',\n'.join(values_list)
+        cur.execute(f"""
+            INSERT INTO WATERMARK_UPDATES (SYMBOL, FIRST_DATE, LAST_DATE)
+            VALUES {values_clause}
+        """)
+        cur.execute(f"""
+            MERGE INTO ETL_WATERMARKS target
+            USING WATERMARK_UPDATES source
+            ON target.TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
+               AND target.SYMBOL = source.SYMBOL
+            WHEN MATCHED THEN UPDATE SET
+                FIRST_FISCAL_DATE = COALESCE(target.FIRST_FISCAL_DATE, source.FIRST_DATE),
+                LAST_FISCAL_DATE = source.LAST_DATE,
+                LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(),
+                CONSECUTIVE_FAILURES = 0,
+                UPDATED_AT = CURRENT_TIMESTAMP()
+        """)
+        print(f"✅ Bulk updated {len(successful_updates)} successful watermarks.")
+    # Failed symbols: batch UPDATE
+    if failed_symbols:
+        symbols_list = "', '".join(failed_symbols)
+        cur.execute(f"""
+            UPDATE ETL_WATERMARKS
+            SET CONSECUTIVE_FAILURES = COALESCE(CONSECUTIVE_FAILURES, 0) + 1,
+                UPDATED_AT = CURRENT_TIMESTAMP()
+            WHERE TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
+              AND SYMBOL IN ('{symbols_list}')
+        """)
+        print(f"✅ Updated {len(failed_symbols)} failed watermarks.")
+
 def main():
     # Get API key from environment (strict)
     api_key = os.environ["ALPHAVANTAGE_API_KEY"]
@@ -135,7 +188,8 @@ def main():
     cur.execute(query)
     rows = cur.fetchall()
         # Initialize a list of symbols not found
-    SYMBOLS_NOT_FOUND = []
+    successful_updates = []
+    failed_symbols = []
     for symbol, ipo_date, last_fiscal_date in rows:
         if ipo_date is None or ipo_date < datetime.date(START_YEAR, 1, 1):
             start_date = datetime.date(START_YEAR, 1, 1)
@@ -143,32 +197,28 @@ def main():
             start_date = first_full_quarter_after(ipo_date)
         quarters = get_quarters(start_date, TODAY)
         found_data = False
+        first_date = None
+        last_date = None
         for year, quarter in quarters:
             data = fetch_transcript(symbol, year, quarter, api_key)
             if data and "transcript" in data and data["transcript"]:
-                # print(f"API successful for {symbol} {year}Q{quarter}")
-                pass
                 found_data = True
+                # Set first/last date for watermark update
+                fiscal_date = f"{year}-{'0' if quarter < 10 else ''}{(quarter-1)*3+1:02d}-01"
+                if not first_date:
+                    first_date = fiscal_date
+                last_date = fiscal_date
                 upload_to_s3_transcript(symbol, year, quarter, data, s3_client, bucket)
-            else:
-                # print(f"API failed for {symbol} {year}Q{quarter}")
-                pass
-        if not found_data:
-            SYMBOLS_NOT_FOUND.append(symbol)
+        if found_data:
+            successful_updates.append({
+                'symbol': symbol,
+                'first_date': first_date,
+                'last_date': last_date
+            })
+        else:
+            failed_symbols.append(symbol)
             print(f"⚠️  No earnings call transcript data for {symbol}")
-    # Once all data are loaded or flagged as not found, create a list of symbols
-    # not found and insert into IN() clause
-    # Update watermark to set API_ELIGIBLE = 'SUS'
-    if SYMBOLS_NOT_FOUND:
-        placeholders = ', '.join(['%s'] * len(SYMBOLS_NOT_FOUND))
-        query = f"""
-            UPDATE ETL_WATERMARKS
-            SET API_ELIGIBLE = 'SUS', UPDATED_AT = CURRENT_TIMESTAMP()
-            WHERE SYMBOL IN ({placeholders})
-              AND TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
-        """
-        cur.execute(query, SYMBOLS_NOT_FOUND)
-        print(f"⚠️  No earnings call transcript data for {len(SYMBOLS_NOT_FOUND)} symbols: {SYMBOLS_NOT_FOUND}")
+    bulk_update_watermarks(cur, successful_updates, failed_symbols)
     cur.close()
     conn.close()
 
