@@ -21,13 +21,13 @@ import json
 from io import StringIO
 
 # Constants
-# Constants
 API_KEY = None  # Will be set in main()
 API_URL = "https://www.alphavantage.co/query"
 START_YEAR = 2010
 START_QUARTER = 1
 TODAY = datetime.date.today()
 S3_PREFIX = "earnings_call_transcript/"
+
 def upload_to_s3_transcript(symbol: str, year: int, quarter: int, data: dict, s3_client, bucket: str) -> bool:
     """Upload transcript data to S3 as JSON."""
     try:

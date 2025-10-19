@@ -90,68 +90,41 @@ WHERE TABLE_NAME = '{self.table_name}'
         # Skip recently processed symbols if requested
         if skip_recent_hours:
             query += f"""
-            def get_symbols_to_process(
-                self,
-                exchange_filter: Optional[str] = None,
-                max_symbols: Optional[int] = None,
-                skip_recent_hours: Optional[int] = None,
-                consecutive_failure_threshold: Optional[int] = None
-            ) -> List[Dict]:
-                """
-                Get symbols that need cash flow data extraction based on watermarks.
-                Applies 135-day staleness check: Only fetch if LAST_FISCAL_DATE is NULL
-                or older than 135 days (quarterly data + 45-day filing grace period).
-                """
-                self.connect()
-
-                query = f"""
-        SELECT 
-            SYMBOL,
-            EXCHANGE,
-            ASSET_TYPE,
-            STATUS,
-            FIRST_FISCAL_DATE,
-            LAST_FISCAL_DATE,
-            LAST_SUCCESSFUL_RUN,
-            CONSECUTIVE_FAILURES
-        FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-        WHERE TABLE_NAME = '{self.table_name}'
-          AND API_ELIGIBLE = 'YES'
-        """
-                # FUNDAMENTALS-SPECIFIC LOGIC: Only pull if 135 days have passed since LAST_FISCAL_DATE
+  AND (LAST_SUCCESSFUL_RUN IS NULL OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
+"""
                 # This prevents unnecessary API calls when new quarterly data isn't available yet
                 # 135 days = 90 days (1 quarter) + 45 days (grace period for filing delays)
-                query += """
+            query += """
           AND (LAST_FISCAL_DATE IS NULL 
                OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE()))
         """
                 # Omit symbols with too many consecutive failures
-                if consecutive_failure_threshold is not None:
-                    query += f"""
+            if consecutive_failure_threshold is not None:
+                query += f"""
           AND (CONSECUTIVE_FAILURES IS NULL OR CONSECUTIVE_FAILURES < {consecutive_failure_threshold})
         """
                 # Skip recently processed symbols if requested
-                if skip_recent_hours:
-                    query += f"""
+            if skip_recent_hours:
+                query += f"""
           AND (LAST_SUCCESSFUL_RUN IS NULL 
                OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
         """
-                if exchange_filter:
-                    query += f"\n  AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
-                query += "\nORDER BY SYMBOL"
-                if max_symbols:
-                    query += f"\nLIMIT {max_symbols}"
+            if exchange_filter:
+                query += f"\n  AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
+            query += "\nORDER BY SYMBOL"
+            if max_symbols:
+                query += f"\nLIMIT {max_symbols}"
 
-                logger.info(f"📊 Querying watermarks for {self.table_name}...")
-                logger.info(f"📅 Fundamentals logic: Only symbols with LAST_FISCAL_DATE older than 135 days (or NULL)")
-                if exchange_filter:
-                    logger.info(f"🏢 Exchange filter: {exchange_filter}")
-                if max_symbols:
-                    logger.info(f"🔒 Symbol limit: {max_symbols}")
-                if skip_recent_hours:
-                    logger.info(f"⏭️  Skip recent: {skip_recent_hours} hours")
-                if consecutive_failure_threshold is not None:
-                    logger.info(f"❌ Omit symbols with >= {consecutive_failure_threshold} consecutive failures")
+            logger.info(f"📊 Querying watermarks for {self.table_name}...")
+            logger.info(f"📅 Fundamentals logic: Only symbols with LAST_FISCAL_DATE older than 135 days (or NULL)")
+            if exchange_filter:
+                logger.info(f"🏢 Exchange filter: {exchange_filter}")
+            if max_symbols:
+                logger.info(f"🔒 Symbol limit: {max_symbols}")
+            if skip_recent_hours:
+                logger.info(f"⏭️  Skip recent: {skip_recent_hours} hours")
+            if consecutive_failure_threshold is not None:
+                logger.info(f"❌ Omit symbols with >= {consecutive_failure_threshold} consecutive failures")
 
                 cursor = self.connection.cursor()
                 cursor.execute(query)
