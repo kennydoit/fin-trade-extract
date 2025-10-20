@@ -1,4 +1,0 @@
-# Python dependencies for fin-trade-extract GitHub Actions workflows
-requests>=2.31.0
-boto3>=1.34.0
-snowflake-connector-python>=3.4.0
