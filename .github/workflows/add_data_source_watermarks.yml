@@ -15,6 +15,7 @@ on:
           - INCOME_STATEMENT
           - INSIDER_TRANSACTIONS
           - EARNINGS_CALL_TRANSCRIPT
+          - ETF_PROFILE
           - ALL_SOURCES
         default: 'TIME_SERIES_DAILY_ADJUSTED'
 
