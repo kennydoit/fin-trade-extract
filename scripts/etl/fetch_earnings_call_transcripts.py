@@ -179,6 +179,7 @@ def main():
     )
     conn = snowflake.connector.connect(
         user=os.getenv("SNOWFLAKE_USER"),
+        role='ETL_ROLE',
         private_key=pk_bytes,
         account=os.getenv("SNOWFLAKE_ACCOUNT"),
         warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
