@@ -64,7 +64,7 @@ def main():
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.backends import default_backend
 
-    key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH", "snowflake_rsa_key.der")
+    key_path = "snowflake_rsa_key.der"
     with open(key_path, "rb") as key_file:
         private_key = serialization.load_der_private_key(
             key_file.read(),
