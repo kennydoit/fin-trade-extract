@@ -45,4 +45,23 @@ FROM FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT_UNSPLIT,
      LATERAL FLATTEN(INPUT => TRANSCRIPT_DATA:transcript) transcript_entry
 GROUP BY TRANSCRIPT_DATA:quarter, TRANSCRIPT_DATA:symbol;
 
+-- name: Decode Snowflake private key
+      run: |
+        echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
+
+with open("snowflake_rsa_key.der", "rb") as key_file:
+    private_key = key_file.read()
+
+conn = snowflake.connector.connect(
+    user='ETL_USER',
+    account='GIDLNKY-MBC80835',  # add region if needed
+    private_key=private_key,
+    warehouse='FIN_TRADE_WH',
+    database='FIN_TRADE_EXTRACT',
+    schema='RAW'
+)
+
+-- name: Clean up private key
+      run: rm -f snowflake_rsa_key.der
+
 
