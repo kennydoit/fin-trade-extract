@@ -59,9 +59,27 @@ def main():
     if not sql_path or not os.path.exists(sql_path):
         print(f"SQL file not found: {sql_path}", file=sys.stderr)
         sys.exit(1)
+    # Load private key for key pair authentication
+    import pathlib
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.backends import default_backend
+
+    key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH", "snowflake_rsa_key.der")
+    with open(key_path, "rb") as key_file:
+        private_key = serialization.load_der_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+    pk_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+
     conn = snowflake.connector.connect(
         user=os.environ["SNOWFLAKE_USER"],
-        password=os.environ["SNOWFLAKE_PASSWORD"],
+        private_key=pk_bytes,
         account=os.environ["SNOWFLAKE_ACCOUNT"],
         warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
         database=os.environ["SNOWFLAKE_DATABASE"],
