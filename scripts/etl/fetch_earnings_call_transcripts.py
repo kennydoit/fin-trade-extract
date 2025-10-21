@@ -138,6 +138,7 @@ def bulk_update_watermarks(cur, successful_updates, failed_symbols):
     # Failed symbols: batch UPDATE
     if failed_symbols:
         symbols_list = "', '".join(failed_symbols)
+        # Increment CONSECUTIVE_FAILURES for failed symbols
         cur.execute(f"""
             UPDATE ETL_WATERMARKS
             SET CONSECUTIVE_FAILURES = COALESCE(CONSECUTIVE_FAILURES, 0) + 1,
@@ -146,6 +147,17 @@ def bulk_update_watermarks(cur, successful_updates, failed_symbols):
               AND SYMBOL IN ('{symbols_list}')
         """)
         print(f"✅ Updated {len(failed_symbols)} failed watermarks.")
+
+        # Mark as SUS if threshold exceeded (batch)
+        threshold = int(os.getenv('CONSECUTIVE_FAILURE_THRESHOLD', '3'))
+        cur.execute(f"""
+            UPDATE ETL_WATERMARKS
+            SET API_ELIGIBLE = 'SUS', UPDATED_AT = CURRENT_TIMESTAMP()
+            WHERE TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
+              AND SYMBOL IN ('{symbols_list}')
+              AND COALESCE(CONSECUTIVE_FAILURES, 0) >= {threshold}
+        """)
+        print(f"🔒 Marked symbols as SUS if failures >= {threshold}.")
 
 def main():
     # Get API key from environment (strict)
@@ -241,6 +253,14 @@ def main():
         else:
             failed_symbols.append(symbol)
             print(f"⚠️  No earnings call transcript data for {symbol}")
+            # Immediately mark as SUS in ETL_WATERMARKS
+            cur.execute(f"""
+                UPDATE ETL_WATERMARKS
+                SET API_ELIGIBLE = 'SUS', UPDATED_AT = CURRENT_TIMESTAMP()
+                WHERE TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
+                  AND SYMBOL = '{symbol}'
+            """)
+            print(f"🔒 Marked {symbol} as SUS due to no records pulled.")
 
     bulk_update_watermarks(cur, successful_updates, failed_symbols)
     if len(successful_updates) == 0 and len(failed_symbols) > 0:
