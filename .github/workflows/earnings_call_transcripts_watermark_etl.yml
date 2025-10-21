@@ -38,11 +38,12 @@ jobs:
       AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
 
     steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
     - name: Decode Snowflake private key
       run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
       working-directory: ${{ github.workspace }}
-    - name: Checkout
-      uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
