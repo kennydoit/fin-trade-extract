@@ -80,6 +80,7 @@ def main():
     conn = snowflake.connector.connect(
         user=os.environ["SNOWFLAKE_USER"],
         private_key=pk_bytes,
+        role='ETL_ROLE',
         account=os.environ["SNOWFLAKE_ACCOUNT"],
         warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
         database=os.environ["SNOWFLAKE_DATABASE"],
