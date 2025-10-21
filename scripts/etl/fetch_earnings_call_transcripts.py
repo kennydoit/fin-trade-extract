@@ -241,7 +241,13 @@ def main():
         else:
             failed_symbols.append(symbol)
             print(f"⚠️  No earnings call transcript data for {symbol}")
+
     bulk_update_watermarks(cur, successful_updates, failed_symbols)
+    if len(successful_updates) == 0 and len(failed_symbols) > 0:
+        print("❌ All symbols failed to fetch transcripts. Aborting downstream steps.")
+        cur.close()
+        conn.close()
+        sys.exit(1)
     cur.close()
     conn.close()
 
