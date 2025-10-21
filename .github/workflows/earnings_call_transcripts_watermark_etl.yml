@@ -96,6 +96,7 @@ jobs:
           echo "  - Update watermarks with transcript date range"
           echo "  - Mark API_ELIGIBLE='SUS' if no data for all quarters"
           echo ""
+          python scripts/etl/fetch_earnings_call_transcripts.py
 
 
       - name: Load earnings call transcript data into Snowflake
