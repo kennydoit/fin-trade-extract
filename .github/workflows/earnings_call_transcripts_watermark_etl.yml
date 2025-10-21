@@ -102,8 +102,57 @@ jobs:
         echo "  - Mark API_ELIGIBLE='SUS' if no data for all quarters"
         echo ""
         python scripts/etl/fetch_earnings_call_transcripts.py
+    # ...existing steps...
+    - name: Upload processing results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: watermark-etl-results-${{ github.run_number }}
+        path: /tmp/watermark_etl_results.json
+        retention-days: 30
+
+    - name: Summary Report
+      if: always()
+      run: |
+        echo "📊 WATERMARK-BASED ETL PROCESSING SUMMARY"
+        echo "=========================================="
+        if [ -n "${{ inputs.exchange_filter }}" ]; then
+          echo "🏢 Exchange: ${{ inputs.exchange_filter }}"
+        else
+          echo "🌐 Exchange: All"
+        fi
+        echo ""
+        if [ -f /tmp/watermark_etl_results.json ]; then
+          python -c "
+        import json
+        with open('/tmp/watermark_etl_results.json', 'r') as f:
+            results = json.load(f)
+        print(f'📈 Total symbols processed: {results[\"total_symbols\"]}')
+        print(f'✅ Successful: {results[\"successful\"]} ({results[\"successful\"]/results[\"total_symbols\"]*100:.1f}%)')  
+        print(f'❌ Failed: {results[\"failed\"]}')
+        print(f'⏱️  Duration: {results[\"duration_minutes\"]:.1f} minutes')
+        if results['total_symbols'] > 0 and results['duration_minutes'] > 0:
+            efficiency = results['successful'] / results['duration_minutes']
+            print(f'')
+            print(f'⚡ Processing efficiency: {efficiency:.1f} symbols/minute')
+        print(f'')
+        print(f'✅ Watermarks updated for {results[\"successful\"]} symbols')
+        print(f'   - FIRST_FISCAL_DATE set (if NULL)')
+        print(f'   - LAST_FISCAL_DATE updated to latest data')
+        print(f'   - LAST_SUCCESSFUL_RUN = current timestamp')
+        print(f'   - CONSECUTIVE_FAILURES reset to 0')
+        if results.get('suspended_marked', 0) > 0:
+            print(f'')
+            print(f'🔒 Symbols marked as API_ELIGIBLE=\"SUS\": {results[\"suspended_marked\"]}')
+            print(f'   (Symbols with no data for all quarters)')
+        "
+        else
+          echo "❌ No results file found - check logs for errors"
+        fi
+
     - name: Clean up private key
       run: rm -f snowflake_rsa_key.der
+      working-directory: ${{ github.workspace }}
 
     - name: Load earnings call transcript data into Snowflake
       env:
