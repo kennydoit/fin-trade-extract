@@ -683,7 +683,7 @@ WHERE TABLE_NAME = 'BALANCE_SHEET';
 1. **Extract:** Fetch active and delisted listings
 2. **Load:** `snowflake/runbooks/load_listing_status_from_s3_simple.sql`
    - COPY both active and delisted files
-   - Deduplicate (prioritize active file)
+   - Deduplication prioritizes active file over delisted file
    - MERGE into LISTING_STATUS
 
 **Special Notes:**
