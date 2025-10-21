@@ -225,6 +225,7 @@ def main():
         # Initialize a list of symbols not found
     successful_updates = []
     failed_symbols = []
+    sus_symbols = []
     for symbol, ipo_date, last_fiscal_date in rows:
         if ipo_date is None or ipo_date < datetime.date(START_YEAR, 1, 1):
             start_date = datetime.date(START_YEAR, 1, 1)
@@ -252,15 +253,19 @@ def main():
             })
         else:
             failed_symbols.append(symbol)
+            sus_symbols.append(symbol)
             print(f"⚠️  No earnings call transcript data for {symbol}")
-            # Immediately mark as SUS in ETL_WATERMARKS
-            cur.execute(f"""
-                UPDATE ETL_WATERMARKS
-                SET API_ELIGIBLE = 'SUS', UPDATED_AT = CURRENT_TIMESTAMP()
-                WHERE TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
-                  AND SYMBOL = '{symbol}'
-            """)
-            print(f"🔒 Marked {symbol} as SUS due to no records pulled.")
+
+    # Batch update SUS for all symbols with no records pulled
+    if sus_symbols:
+        sus_list = "', '".join(sus_symbols)
+        cur.execute(f"""
+            UPDATE ETL_WATERMARKS
+            SET API_ELIGIBLE = 'SUS', UPDATED_AT = CURRENT_TIMESTAMP()
+            WHERE TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
+              AND SYMBOL IN ('{sus_list}')
+        """)
+        print(f"🔒 Marked {len(sus_symbols)} symbols as SUS due to no records pulled.")
 
     bulk_update_watermarks(cur, successful_updates, failed_symbols)
     if len(successful_updates) == 0 and len(failed_symbols) > 0:
