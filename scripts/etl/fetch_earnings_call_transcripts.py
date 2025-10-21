@@ -1,6 +1,7 @@
 
 
 import os
+import sys
 import datetime
 import requests
 import pandas as pd
@@ -160,6 +161,11 @@ def main():
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.backends import default_backend
     key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH", "snowflake_rsa_key.der")
+    if not os.path.isfile(key_path):
+        print(f"❌ Private key file not found: {key_path}")
+        print(f"Current working directory: {os.getcwd()}")
+        print("Make sure the key is decoded and present before running this script.")
+        sys.exit(1)
     with open(key_path, "rb") as key_file:
         private_key = serialization.load_der_private_key(
             key_file.read(),
