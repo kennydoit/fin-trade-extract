@@ -57,6 +57,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
+          role-duration-seconds: 14400  # or 43200, but <= max session duration
       - name: Fetch earnings call transcript data using watermarks
         working-directory: ${{ github.workspace }}
         env:
