@@ -2,3 +2,4 @@ boto3
 requests
 snowflake-connector-python
 pandas
+cryptography
