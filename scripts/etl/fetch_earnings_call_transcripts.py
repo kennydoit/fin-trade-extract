@@ -156,9 +156,24 @@ def main():
     # Get API key from environment (strict)
     api_key = os.environ["ALPHAVANTAGE_API_KEY"]
     # Connect to Snowflake and get eligible symbols
+    # Load private key for key pair authentication
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.backends import default_backend
+    key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH", "snowflake_rsa_key.der")
+    with open(key_path, "rb") as key_file:
+        private_key = serialization.load_der_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+    pk_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
     conn = snowflake.connector.connect(
         user=os.getenv("SNOWFLAKE_USER"),
-        password=os.getenv("SNOWFLAKE_PASSWORD"),
+        private_key=pk_bytes,
         account=os.getenv("SNOWFLAKE_ACCOUNT"),
         warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
         database="FIN_TRADE_EXTRACT",
