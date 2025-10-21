@@ -155,6 +155,7 @@ jobs:
       working-directory: ${{ github.workspace }}
 
     - name: Load earnings call transcript data into Snowflake
+      working-directory: ${{ github.workspace }}
       env:
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
