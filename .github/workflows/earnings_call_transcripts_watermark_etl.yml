@@ -8,7 +8,6 @@ on:
         required: false
         type: choice
         options:
-          - ''
           - NYSE
           - NASDAQ
           - AMEX
