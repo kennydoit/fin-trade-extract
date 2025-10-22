@@ -83,7 +83,7 @@ def fetch_transcript(symbol, year, quarter, api_key, max_retries=3, backoff=2):
     for attempt in range(max_retries):
         try:
             response = requests.get(API_URL, params=params, timeout=30)
-            time.sleep(0.80)  # Fixed delay to avoid rate limiting
+            time.sleep(0.6)  # Fixed delay to avoid rate limiting
             if response.status_code == 200 and response.json():
                 return response.json()
             else:
