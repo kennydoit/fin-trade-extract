@@ -25,24 +25,42 @@ FROM (
 )
 FILE_FORMAT = (TYPE = 'JSON');
 
+
 CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT (
     SYMBOL_ID NUMBER(38, 0),
     QUARTER VARCHAR(20),
     SYMBOL VARCHAR(20),
-    SENTIMENT FLOAT,
-    TRANSCRIPT_TEXT STRING
+    SPEAKER STRING,
+    TITLE STRING,
+    CONTENT STRING,
+    SENTIMENT FLOAT
 );
 
--- Create the final split-out table
-INSERT INTO FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT
-SELECT
-    ABS(HASH(TRANSCRIPT_DATA:symbol::STRING)) % 1000000000 AS symbol_id,
-    TRANSCRIPT_DATA:quarter::STRING AS quarter,
-    TRANSCRIPT_DATA:symbol::STRING AS symbol,
-    MAX(transcript_entry.value:sentiment::FLOAT) AS sentiment,
-    ARRAY_TO_STRING(ARRAY_AGG(transcript_entry.value:content::STRING), ' ') AS transcript_text
-FROM FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT_UNSPLIT,
-     LATERAL FLATTEN(INPUT => TRANSCRIPT_DATA:transcript) transcript_entry
-GROUP BY TRANSCRIPT_DATA:quarter, TRANSCRIPT_DATA:symbol;
+
+MERGE INTO FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT tgt
+USING (
+    SELECT
+        ABS(HASH(TRANSCRIPT_DATA:symbol::STRING)) % 1000000000 AS symbol_id,
+        TRANSCRIPT_DATA:quarter::STRING AS quarter,
+        TRANSCRIPT_DATA:symbol::STRING AS symbol,
+        transcript_entry.value:speaker::STRING AS speaker,
+        transcript_entry.value:title::STRING AS title,
+        transcript_entry.value:content::STRING AS content,
+        transcript_entry.value:sentiment::FLOAT AS sentiment
+    FROM FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT_UNSPLIT,
+         LATERAL FLATTEN(INPUT => TRANSCRIPT_DATA:transcript) transcript_entry
+) src
+ON tgt.symbol = src.symbol
+   AND tgt.quarter = src.quarter
+   AND tgt.speaker = src.speaker
+   AND tgt.sentiment = src.sentiment
+   AND LEFT(tgt.content, 50) = LEFT(src.content, 50)
+   AND RIGHT(tgt.content, 50) = RIGHT(src.content, 50)
+WHEN NOT MATCHED THEN
+    INSERT (
+        SYMBOL_ID, QUARTER, SYMBOL, SPEAKER, TITLE, CONTENT, SENTIMENT
+    ) VALUES (
+        src.symbol_id, src.quarter, src.symbol, src.speaker, src.title, src.content, src.sentiment
+    );
 
 
