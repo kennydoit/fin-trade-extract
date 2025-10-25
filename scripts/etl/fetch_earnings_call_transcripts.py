@@ -32,8 +32,8 @@ def cleanup_s3_json(bucket: str, prefix: str, s3_client) -> int:
     print(f"🧹 Cleaned up S3 bucket: s3://{bucket}/{prefix} ({deleted} .json files deleted)")
     return deleted
 
-def upload_to_s3_transcript(symbol: str, year: int, quarter: int, data: dict, s3_client, bucket: str) -> bool:
-    """Upload transcript data to S3 as JSON."""
+def upload_to_s3_transcript(symbol: str, year: int, quarter: int, data: dict, s3_client, bucket: str, symbol_count: int = None) -> bool:
+    """Upload transcript data to S3 as JSON. Optionally include symbol count in log."""
     try:
         s3_key = f"{S3_PREFIX}{symbol}_{year}Q{quarter}.json"
         s3_client.put_object(
@@ -42,10 +42,16 @@ def upload_to_s3_transcript(symbol: str, year: int, quarter: int, data: dict, s3
             Body=json.dumps(data).encode('utf-8'),
             ContentType='application/json'
         )
-        print(f"✅ Uploaded: s3://{bucket}/{s3_key}")
+        if symbol_count is not None:
+            print(f"[{symbol_count}] ✅ Uploaded: s3://{bucket}/{s3_key}")
+        else:
+            print(f"✅ Uploaded: s3://{bucket}/{s3_key}")
         return True
     except Exception as e:
-        print(f"❌ S3 upload failed for {symbol} {year}Q{quarter}: {e}")
+        if symbol_count is not None:
+            print(f"[{symbol_count}] ❌ S3 upload failed for {symbol} {year}Q{quarter}: {e}")
+        else:
+            print(f"❌ S3 upload failed for {symbol} {year}Q{quarter}: {e}")
         return False
 
 def get_quarters(start_date, end_date):
@@ -226,7 +232,10 @@ def main():
     successful_updates = []
     failed_symbols = []
     sus_symbols = []
+
+    symbol_count = 0
     for symbol, ipo_date, last_fiscal_date in rows:
+        symbol_count += 1
         if ipo_date is None or ipo_date < datetime.date(START_YEAR, 1, 1):
             start_date = datetime.date(START_YEAR, 1, 1)
         else:
@@ -244,7 +253,7 @@ def main():
                 if not first_date:
                     first_date = fiscal_date
                 last_date = fiscal_date
-                upload_to_s3_transcript(symbol, year, quarter, data, s3_client, bucket)
+                upload_to_s3_transcript(symbol, year, quarter, data, s3_client, bucket, symbol_count)
         if found_data:
             successful_updates.append({
                 'symbol': symbol,
@@ -254,7 +263,7 @@ def main():
         else:
             failed_symbols.append(symbol)
             sus_symbols.append(symbol)
-            print(f"⚠️  No earnings call transcript data for {symbol}")
+            print(f"[{symbol_count}] ⚠️  No earnings call transcript data for {symbol}")
 
     # Batch update SUS for all symbols with no records pulled
     if sus_symbols:
