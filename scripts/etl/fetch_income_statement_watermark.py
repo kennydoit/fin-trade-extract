@@ -427,8 +427,7 @@ def process_symbols_in_batches(symbols: List[Dict], api_key: str, s3_client,
     
     for i, symbol_info in enumerate(symbols, 1):
         symbol = symbol_info['symbol']
-        
-        logger.info(f"📊 Processing {symbol} ({i}/{total})...")
+        logger.info(f"📊 [{i}] Processing {symbol}...")
         
         # Fetch from API
         data = fetch_income_statement(symbol, api_key, rate_limiter)

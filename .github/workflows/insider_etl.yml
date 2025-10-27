@@ -52,6 +52,11 @@ jobs:
       with:
         ref: ${{ github.ref }}
 
+
+    - name: Decode Snowflake private key
+      run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
+      working-directory: ${{ github.workspace }}
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -70,6 +75,7 @@ jobs:
         role-duration-seconds: 43200
 
     - name: Fetch insider transactions data using watermarks
+      working-directory: ${{ github.workspace }}
       env:
         ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
         AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -77,7 +83,6 @@ jobs:
         S3_INSIDER_TRANSACTIONS_PREFIX: insider_transactions/
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
         SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
@@ -113,18 +118,22 @@ jobs:
         echo ""
         echo "Running Insider Transactions ETL fetch script..."
         python scripts/etl/fetch_insider_transactions_watermark.py
-        
+
     - name: Load insider transactions data into Snowflake
+      working-directory: ${{ github.workspace }}
       env:
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
         SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
       run: |
         echo "🗄️ Loading insider transactions data into Snowflake..."
         python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_insider_transactions_from_s3.sql
+
+    - name: Clean up private key
+      run: rm -f snowflake_rsa_key.der
+      working-directory: ${{ github.workspace }}
 
     - name: Upload processing results
       if: always()

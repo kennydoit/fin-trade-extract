@@ -516,8 +516,7 @@ def main():
         symbol = symbol_info['symbol']
         mode = symbol_info['processing_mode']
         output_size = 'full' if mode == 'full' else 'compact'
-        
-        logger.info(f"📊 [{i}/{len(symbols_to_process)}] Processing {symbol} ({mode} mode)...")
+        logger.info(f"📊 [{i}] Processing {symbol} ({mode} mode)...")
         
         # Rate limit
         rate_limiter.wait_if_needed()

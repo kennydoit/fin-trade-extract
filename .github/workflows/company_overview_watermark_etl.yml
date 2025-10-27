@@ -45,6 +45,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+
+    - name: Decode Snowflake private key
+      run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
+      working-directory: ${{ github.workspace }}
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -62,6 +67,7 @@ jobs:
         aws-region: ${{ secrets.AWS_REGION }}
 
     - name: Fetch company overview data using watermarks
+      working-directory: ${{ github.workspace }}
       env:
         ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
         AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -69,7 +75,6 @@ jobs:
         S3_COMPANY_OVERVIEW_PREFIX: company_overview/
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
         SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
@@ -103,20 +108,23 @@ jobs:
         echo "  - Update watermarks with LatestQuarter date"
         echo "  - Mark delisted stocks as 'DEL' after successful extraction"
         echo ""
-        
         python scripts/etl/fetch_company_overview_watermark.py
 
     - name: Load company overview data into Snowflake
+      working-directory: ${{ github.workspace }}
       env:
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
         SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
       run: |
         echo "🗄️ Loading company overview data into Snowflake..."
         python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_company_overview_from_s3_watermark.sql
+
+    - name: Clean up private key
+      run: rm -f snowflake_rsa_key.der
+      working-directory: ${{ github.workspace }}
 
     - name: Upload processing results
       if: always()

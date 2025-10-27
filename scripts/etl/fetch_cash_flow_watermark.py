@@ -497,15 +497,11 @@ def main():
     
     for i, symbol_info in enumerate(symbols_to_process, 1):
         symbol = symbol_info['symbol']
-        
-        logger.info(f"📊 [{i}/{len(symbols_to_process)}] Processing {symbol}...")
-        
+        logger.info(f"📊 [{i}] Processing {symbol}...")
         # Rate limit
         rate_limiter.wait_if_needed()
-        
         # Fetch data
         data = fetch_cash_flow_data(symbol, api_key)
-        
         if data:
             # Upload to S3
             if upload_to_s3(data, s3_client, s3_bucket, s3_prefix):

@@ -8,23 +8,33 @@ on:
 jobs:
   etf_profile_watermark_etl:
     runs-on: ubuntu-latest
-    env:
-      ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
-      S3_BUCKET: fin-trade-craft-landing
-      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      - name: Decode Snowflake private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
+        working-directory: ${{ github.workspace }}
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run ETF Profile ETL
+        working-directory: ${{ github.workspace }}
+        env:
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+          S3_BUCKET: fin-trade-craft-landing
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
         run: python scripts/etl/fetch_etf_profile_watermark.py
+
+      - name: Clean up private key
+        run: rm -f snowflake_rsa_key.der
+        working-directory: ${{ github.workspace }}

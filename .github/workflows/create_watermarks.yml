@@ -13,20 +13,16 @@ jobs:
   create-watermarks:
     runs-on: ubuntu-latest
     
-    env:
-      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
-      SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
-      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Decode Snowflake private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
+        working-directory: ${{ github.workspace }}
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -36,33 +32,40 @@ jobs:
           pip install snowflake-connector-python
 
       - name: Create ETL Watermarks Table
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
         run: |
           echo "🚀 Creating ETL_WATERMARKS table from SQL file"
           echo "📅 Timestamp: $(date)"
-          echo "� Using: snowflake/setup/create_watermark_table.sql"
-          
+          echo "Using: snowflake/setup/create_watermark_table.sql"
           python scripts/watermarking/create_watermarks_from_sql.py
 
       - name: Generate Watermark Report
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
         run: |
           echo "📊 Generating watermark report..."
           python -c "
           import snowflake.connector
           import os
-          
           config = {
               'account': os.getenv('SNOWFLAKE_ACCOUNT'),
               'user': os.getenv('SNOWFLAKE_USER'),
-              'password': os.getenv('SNOWFLAKE_PASSWORD'),
+              'private_key_path': 'snowflake_rsa_key.der',
+              'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE'),
               'database': os.getenv('SNOWFLAKE_DATABASE'),
-              'schema': os.getenv('SNOWFLAKE_SCHEMA'),
-              'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE')
+              'schema': os.getenv('SNOWFLAKE_SCHEMA')
           }
-          
           conn = snowflake.connector.connect(**config)
           cursor = conn.cursor()
-          
-          # Get watermark summary using correct column names
           cursor.execute('''
               SELECT 
                   TABLE_NAME,
@@ -74,17 +77,14 @@ jobs:
               GROUP BY TABLE_NAME
               ORDER BY TABLE_NAME
           ''')
-          
           results = cursor.fetchall()
-          
           print('📋 Current ETL Watermarks Summary:')
           print('=' * 80)
-          print(f'{\"Table Name\":<30} | {\"Symbols\":<8} | {\"Success\":<8} | {\"Failed\":<8} | {\"Last Success\":<20}')
+          print(f'{"Table Name":<30} | {"Symbols":<8} | {"Success":<8} | {"Failed":<8} | {"Last Success":<20}')
           print('=' * 80)
           for row in results:
               last_success = str(row[4]) if row[4] else 'Never'
               print(f'{row[0]:<30} | {row[1]:<8} | {row[2]:<8} | {row[3]:<8} | {last_success:<20}')
-          
           cursor.close()
           conn.close()
           "
@@ -99,6 +99,10 @@ jobs:
             "status": "completed"
           }
           EOF
+
+      - name: Clean up private key
+        run: rm -f snowflake_rsa_key.der
+        working-directory: ${{ github.workspace }}
 
       - name: Upload Results
         uses: actions/upload-artifact@v4

@@ -324,7 +324,7 @@ def main():
 
     for i, symbol_info in enumerate(symbols_to_process, 1):
         symbol = symbol_info['symbol']
-        logger.info(f"📊 [{i}/{len(symbols_to_process)}] Processing {symbol}...")
+        logger.info(f"📊 [{i}] Processing {symbol}...")
         rate_limiter.wait_if_needed()
 
         data = fetch_insider_transactions_data(symbol, api_key)
