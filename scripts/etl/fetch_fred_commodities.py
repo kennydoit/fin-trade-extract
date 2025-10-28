@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 ALPHAVANTAGE_API_KEY = os.environ["ALPHAVANTAGE_API_KEY"]
-S3_BUCKET = os.environ.get("S3_BUCKET", "fin-trade-craft-landing")
+S3_BUCKET = os.environ.get("S3_BUCKET") or "fin-trade-craft-landing"
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 SNOWFLAKE_ACCOUNT = os.environ["SNOWFLAKE_ACCOUNT"]
 SNOWFLAKE_USER = os.environ["SNOWFLAKE_USER"]
@@ -40,7 +40,7 @@ COMMODITIES = [
 ]
 
 API_URL = "https://www.alphavantage.co/query"
-S3_PREFIX = os.environ.get("S3_FRED_COMMODITIES_PREFIX", "fred_commodities/")
+S3_PREFIX = os.environ.get("S3_FRED_COMMODITIES_PREFIX", "commodities/")
 
 def fetch_commodity_series(function_name):
     params = {
