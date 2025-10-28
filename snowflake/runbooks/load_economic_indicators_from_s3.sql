@@ -52,9 +52,18 @@ ON_ERROR = 'CONTINUE';
 -- Step 4: Merge staged data into target table
 MERGE INTO FIN_TRADE_EXTRACT.RAW.ECONOMIC_INDICATORS tgt
 USING (
-    SELECT DISTINCT
+    SELECT
         indicator_name, function_name, maturity, date, interval, unit, value, name, run_id
-    FROM FIN_TRADE_EXTRACT.RAW.ECONOMIC_INDICATORS_STAGING
+    FROM (
+        SELECT
+            indicator_name, function_name, maturity, date, interval, unit, value, name, run_id,
+            ROW_NUMBER() OVER (
+                PARTITION BY indicator_name, function_name, maturity, date, interval
+                ORDER BY run_id DESC
+            ) AS rn
+        FROM FIN_TRADE_EXTRACT.RAW.ECONOMIC_INDICATORS_STAGING
+    )
+    WHERE rn = 1
 ) src
 ON tgt.indicator_name = src.indicator_name
    AND tgt.function_name = src.function_name
