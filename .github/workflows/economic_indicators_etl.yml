@@ -49,16 +49,16 @@ jobs:
         run: |
           python scripts/etl/fetch_economic_indicators.py
 
-      - name: Set up Snowflake private key
-        id: snowflake-key
-        run: |
-          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" | base64 -d > snowflake_key.p8
+
+      - name: Decode Snowflake private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
+        working-directory: ${{ github.workspace }}
 
       - name: Load Economic Indicators into Snowflake
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PRIVATE_KEY_PATH: ${{ github.workspace }}/snowflake_key.p8
+          SNOWFLAKE_PRIVATE_KEY_PATH: ${{ github.workspace }}/snowflake_rsa_key.der
           SNOWFLAKE_ROLE: ETL_ROLE
           SNOWFLAKE_DATABASE: FIN_TRADE_EXTRACT
           SNOWFLAKE_SCHEMA: RAW
@@ -68,4 +68,4 @@ jobs:
 
       - name: Cleanup Snowflake private key
         if: always()
-        run: rm -f snowflake_key.p8
+        run: rm -f snowflake_rsa_key.der
