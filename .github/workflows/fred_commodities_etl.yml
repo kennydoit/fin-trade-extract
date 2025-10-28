@@ -32,19 +32,30 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           role-duration-seconds: 14400
 
-      - name: Run FRED Commodities ETL
+
+      - name: Fetch FRED Commodities (Alpha Vantage → S3)
         env:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
           S3_BUCKET: fin-trade-craft-landing
+        run: |
+          python scripts/etl/fetch_fred_commodities.py
+
+      - name: Decode Snowflake private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
+        working-directory: ${{ github.workspace }}
+
+      - name: Load FRED Commodities into Snowflake
+        env:
+          S3_BUCKET: fin-trade-craft-landing
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_PRIVATE_KEY_PATH: snowflake_rsa_key.der
         run: |
-          python scripts/etl/fetch_fred_commodities.py
+          python scripts/etl/load_fred_commodities.py
 
       - name: Upload results artifact
         uses: actions/upload-artifact@v4

@@ -19,7 +19,6 @@ S3_BUCKET = os.environ.get("S3_BUCKET") or "fin-trade-craft-landing"
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 SNOWFLAKE_ACCOUNT = os.environ["SNOWFLAKE_ACCOUNT"]
 SNOWFLAKE_USER = os.environ["SNOWFLAKE_USER"]
-SNOWFLAKE_PASSWORD = os.environ["SNOWFLAKE_PASSWORD"]
 SNOWFLAKE_DATABASE = os.environ["SNOWFLAKE_DATABASE"]
 SNOWFLAKE_SCHEMA = os.environ["SNOWFLAKE_SCHEMA"]
 SNOWFLAKE_WAREHOUSE = os.environ["SNOWFLAKE_WAREHOUSE"]
@@ -85,10 +84,13 @@ def upload_to_s3(csv_content, commodity):
     return s3_key
 
 def load_into_snowflake(s3_key, commodity):
+    private_key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH", "snowflake_rsa_key.der")
+    with open(private_key_path, "rb") as key_file:
+        private_key = key_file.read()
     conn = snowflake.connector.connect(
         account=SNOWFLAKE_ACCOUNT,
         user=SNOWFLAKE_USER,
-        password=SNOWFLAKE_PASSWORD,
+        private_key=private_key,
         database=SNOWFLAKE_DATABASE,
         schema=SNOWFLAKE_SCHEMA,
         warehouse=SNOWFLAKE_WAREHOUSE
@@ -118,8 +120,9 @@ def load_into_snowflake(s3_key, commodity):
     conn.close()
 
 
+
 def main():
-    logger.info("🚀 Starting FRED Commodities ETL (Alpha Vantage)")
+    logger.info("🚀 Starting FRED Commodities Fetch (Alpha Vantage)")
     for commodity, function_name in COMMODITIES:
         logger.info(f"Fetching {commodity} ({function_name}) from Alpha Vantage...")
         data = fetch_commodity_series(function_name)
@@ -127,9 +130,8 @@ def main():
             logger.warning(f"No data for {commodity} ({function_name})")
             continue
         csv_content = write_csv_to_buffer(commodity, data)
-        s3_key = upload_to_s3(csv_content, commodity)
-        load_into_snowflake(s3_key, commodity)
-    logger.info("🎉 FRED Commodities ETL complete!")
+        upload_to_s3(csv_content, commodity)
+    logger.info("🎉 FRED Commodities fetch complete! Data uploaded to S3.")
 
 if __name__ == "__main__":
     main()
