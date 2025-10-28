@@ -1,1 +1,0 @@
-Sample ETF Profile: https://www.alphavantage.co/query?function=ETF_PROFILE&symbol=QQQ&apikey=demo
