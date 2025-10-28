@@ -83,43 +83,6 @@ def upload_to_s3(csv_content, commodity):
     logger.info(f"✅ Uploaded {commodity} to s3://{S3_BUCKET}/{s3_key}")
     return s3_key
 
-def load_into_snowflake(s3_key, commodity):
-    private_key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH", "snowflake_rsa_key.der")
-    with open(private_key_path, "rb") as key_file:
-        private_key = key_file.read()
-    conn = snowflake.connector.connect(
-        account=SNOWFLAKE_ACCOUNT,
-        user=SNOWFLAKE_USER,
-        private_key=private_key,
-        database=SNOWFLAKE_DATABASE,
-        schema=SNOWFLAKE_SCHEMA,
-        warehouse=SNOWFLAKE_WAREHOUSE
-    )
-    cur = conn.cursor()
-    table = f"FRED_COMMODITIES_{commodity.upper()}"
-    # Create table if not exists
-    cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS {table} (
-            COMMODITY STRING,
-            DATE DATE,
-            VALUE FLOAT
-        )
-    """)
-    # Remove old data (full refresh)
-    cur.execute(f"DELETE FROM {table}")
-    # Copy from S3
-    s3_url = f"s3://{S3_BUCKET}/{s3_key}"
-    cur.execute(f"""
-        COPY INTO {table}
-        FROM '{s3_url}'
-        FILE_FORMAT = (TYPE = 'CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1)
-        FORCE=TRUE
-    """)
-    logger.info(f"✅ Loaded {commodity} into Snowflake table {table}")
-    cur.close()
-    conn.close()
-
-
 
 def main():
     logger.info("🚀 Starting FRED Commodities Fetch (Alpha Vantage)")
