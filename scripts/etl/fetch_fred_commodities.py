@@ -24,49 +24,56 @@ SNOWFLAKE_DATABASE = os.environ["SNOWFLAKE_DATABASE"]
 SNOWFLAKE_SCHEMA = os.environ["SNOWFLAKE_SCHEMA"]
 SNOWFLAKE_WAREHOUSE = os.environ["SNOWFLAKE_WAREHOUSE"]
 
-# Map commodity names to FRED series IDs (from Alpha Vantage docs)
+
+# Map commodity names to Alpha Vantage function names (per docs)
 COMMODITIES = [
-    ("WTI", "DCOILWTICO"),
-    ("BRENT", "DCOILBRENTEU"),
-    ("NATURAL_GAS", "DHHNGSP"),
-    ("COPPER", "PCOPPUSDM"),
-    ("ALUMINUM", "PALUMUSDM"),
-    ("WHEAT", "PWHEAMTUSDM"),
-    ("CORN", "PMAIZMTUSDM"),
-    ("COTTON", "PCOTTINDUSDM"),
-    ("SUGAR", "PSUGAUSAUSDM"),
-    ("ALL_COMMODITIES", "PALLFNFINDEXQ"),
+    ("WTI", "WTI"),
+    ("BRENT", "BRENT"),
+    ("NATURAL_GAS", "NATURAL_GAS"),
+    ("COPPER", "COPPER"),
+    ("ALUMINUM", "ALUMINUM"),
+    ("WHEAT", "WHEAT"),
+    ("CORN", "CORN"),
+    ("COTTON", "COTTON"),
+    ("SUGAR", "SUGAR"),
+    ("ALL_COMMODITIES", "ALL_COMMODITIES"),
 ]
 
 API_URL = "https://www.alphavantage.co/query"
 S3_PREFIX = os.environ.get("S3_FRED_COMMODITIES_PREFIX", "fred_commodities/")
 
-def fetch_fred_series(series_id):
+def fetch_commodity_series(function_name):
     params = {
-        "function": "FRED",
-        "series_id": series_id,
+        "function": function_name,
+        "interval": "monthly",
         "apikey": ALPHAVANTAGE_API_KEY
     }
     resp = requests.get(API_URL, params=params, timeout=30)
     if resp.status_code == 200:
         data = resp.json()
-        if "error_message" in data:
-            logger.warning(f"API error for {series_id}: {data['error_message']}")
-            return None
-        if "Note" in data:
-            logger.warning(f"API rate limit hit for {series_id}: {data['Note']}")
-            return None
-        return data.get("data", [])
-    else:
-        logger.error(f"Failed to fetch {series_id}: {resp.status_code}")
+        # The time series is under a key like 'data' or 'monthly' or similar; try to find it
+        for key in ["data", "monthly", "Monthly Time Series", "Monthly Prices", "Time Series (Monthly)"]:
+            if key in data:
+                return data[key]
+        # If not found, log and return None
+        logger.warning(f"No recognized data key in response for {function_name}: {list(data.keys())}")
         return None
+    else:
+        logger.error(f"Failed to fetch {function_name}: {resp.status_code}")
+        return None
+
 
 def write_csv_to_buffer(commodity, data):
     buf = StringIO()
     writer = csv.writer(buf)
     writer.writerow(["commodity", "date", "value"])
-    for row in data:
-        writer.writerow([commodity, row.get("date"), row.get("value")])
+    # Data may be a list of dicts or a dict of date: value
+    if isinstance(data, list):
+        for row in data:
+            writer.writerow([commodity, row.get("date"), row.get("value")])
+    elif isinstance(data, dict):
+        for date, value in data.items():
+            writer.writerow([commodity, date, value])
     return buf.getvalue()
 
 def upload_to_s3(csv_content, commodity):
@@ -110,13 +117,14 @@ def load_into_snowflake(s3_key, commodity):
     cur.close()
     conn.close()
 
+
 def main():
     logger.info("🚀 Starting FRED Commodities ETL (Alpha Vantage)")
-    for commodity, series_id in COMMODITIES:
-        logger.info(f"Fetching {commodity} ({series_id}) from Alpha Vantage...")
-        data = fetch_fred_series(series_id)
+    for commodity, function_name in COMMODITIES:
+        logger.info(f"Fetching {commodity} ({function_name}) from Alpha Vantage...")
+        data = fetch_commodity_series(function_name)
         if not data:
-            logger.warning(f"No data for {commodity} ({series_id})")
+            logger.warning(f"No data for {commodity} ({function_name})")
             continue
         csv_content = write_csv_to_buffer(commodity, data)
         s3_key = upload_to_s3(csv_content, commodity)
