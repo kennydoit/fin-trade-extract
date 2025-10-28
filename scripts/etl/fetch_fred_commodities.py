@@ -6,7 +6,6 @@ import os
 import requests
 import csv
 import boto3
-import snowflake.connector
 from io import StringIO
 from datetime import datetime
 import logging
@@ -17,12 +16,6 @@ logger = logging.getLogger(__name__)
 ALPHAVANTAGE_API_KEY = os.environ["ALPHAVANTAGE_API_KEY"]
 S3_BUCKET = os.environ.get("S3_BUCKET") or "fin-trade-craft-landing"
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
-SNOWFLAKE_ACCOUNT = os.environ["SNOWFLAKE_ACCOUNT"]
-SNOWFLAKE_USER = os.environ["SNOWFLAKE_USER"]
-SNOWFLAKE_DATABASE = os.environ["SNOWFLAKE_DATABASE"]
-SNOWFLAKE_SCHEMA = os.environ["SNOWFLAKE_SCHEMA"]
-SNOWFLAKE_WAREHOUSE = os.environ["SNOWFLAKE_WAREHOUSE"]
-
 
 # Map commodity names to Alpha Vantage function names (per docs)
 COMMODITIES = [
