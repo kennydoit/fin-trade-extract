@@ -1,10 +1,8 @@
 
--- Set S3 bucket and prefix
-set s3_bucket = 'fin-trade-craft-landing';
-set s3_prefix = 'commodities/';
 
--- List of commodities
-set commodities = array_construct('WTI', 'BRENT', 'NATURAL_GAS', 'COPPER', 'ALUMINUM', 'WHEAT', 'CORN', 'COTTON', 'SUGAR', 'ALL_COMMODITIES');
+-- Set S3 bucket and prefix (for documentation only)
+-- s3_bucket = 'fin-trade-craft-landing'
+-- s3_prefix = 'commodities/'
 
 -- For each commodity, create table, truncate, and load all matching CSVs
 -- (Loads all files for each commodity; adjust pattern if you want only the latest)
