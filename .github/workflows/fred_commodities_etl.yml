@@ -45,17 +45,22 @@ jobs:
         run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
         working-directory: ${{ github.workspace }}
 
+
       - name: Load FRED Commodities into Snowflake
+        working-directory: ${{ github.workspace }}
         env:
-          S3_BUCKET: fin-trade-craft-landing
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
-          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          SNOWFLAKE_PRIVATE_KEY_PATH: snowflake_rsa_key.der
         run: |
-          python snowflake/runbooks/load_fred_commodities_from_s3.sql
+          echo "🗄️ Loading FRED commodities data into Snowflake..."
+          python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_fred_commodities_from_s3.sql
+
+      - name: Clean up private key
+        run: rm -f snowflake_rsa_key.der
+        working-directory: ${{ github.workspace }}
 
       - name: Upload results artifact
         uses: actions/upload-artifact@v4
