@@ -10,7 +10,7 @@ USE ROLE ETL_ROLE;
 -- Step 1: Create external stage pointing to S3 commodities folder
 CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.COMMODITIES_STAGE
   URL = 's3://fin-trade-craft-landing/commodities/'
-  STORAGE_INTEGRATION = AWS_INT_READONLY
+  STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION
   FILE_FORMAT = (TYPE = 'CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1);
 
 -- Create a single table for all commodities
