@@ -6,6 +6,10 @@
 
 -- For each commodity, create table, truncate, and load all matching CSVs
 -- (Loads all files for each commodity; adjust pattern if you want only the latest)
+USE DATABASE FIN_TRADE_EXTRACT;
+USE SCHEMA RAW;
+USE WAREHOUSE FIN_TRADE_WH;
+USE ROLE ETL_ROLE;
 
 
 -- Create a single table for all commodities

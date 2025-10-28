@@ -33,6 +33,14 @@ jobs:
           role-duration-seconds: 14400
 
 
+
+      - name: Clean up S3 commodities folder
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          echo "🧹 Deleting all CSVs from s3://fin-trade-craft-landing/commodities/ ..."
+          aws s3 rm s3://fin-trade-craft-landing/commodities/ --recursive --exclude "*" --include "*.csv"
+
       - name: Fetch FRED Commodities (Alpha Vantage → S3)
         env:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
