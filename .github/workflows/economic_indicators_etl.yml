@@ -39,7 +39,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install -r requirements.txt
+          pip install -r scripts/github_actions/requirements.txt
 
       - name: Fetch Economic Indicators and Upload to S3
         env:
