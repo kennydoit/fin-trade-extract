@@ -55,7 +55,7 @@ jobs:
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
           SNOWFLAKE_PRIVATE_KEY_PATH: snowflake_rsa_key.der
         run: |
-          python scripts/etl/load_fred_commodities.py
+          python snowflake/runbooks/load_fred_commodities_from_s3.sql
 
       - name: Upload results artifact
         uses: actions/upload-artifact@v4
