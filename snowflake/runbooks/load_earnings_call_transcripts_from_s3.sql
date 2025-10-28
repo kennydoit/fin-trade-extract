@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS FIN_TRADE_EXTRACT.RAW.EARNINGS_CALL_TRANSCRIPT (
     SPEAKER STRING,
     TITLE STRING,
     CONTENT STRING,
-    SENTIMENT FLOAT
+    SENTIMENT FLOAT,
+    LOAD_DATE DATE DEFAULT CURRENT_DATE()
 );
 
 
@@ -58,9 +59,9 @@ ON tgt.symbol = src.symbol
    AND RIGHT(tgt.content, 50) = RIGHT(src.content, 50)
 WHEN NOT MATCHED THEN
     INSERT (
-        SYMBOL_ID, QUARTER, SYMBOL, SPEAKER, TITLE, CONTENT, SENTIMENT
+        SYMBOL_ID, QUARTER, SYMBOL, SPEAKER, TITLE, CONTENT, SENTIMENT, LOAD_DATE
     ) VALUES (
-        src.symbol_id, src.quarter, src.symbol, src.speaker, src.title, src.content, src.sentiment
+        src.symbol_id, src.quarter, src.symbol, src.speaker, src.title, src.content, src.sentiment, CURRENT_DATE()
     );
 
 
