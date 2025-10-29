@@ -419,10 +419,25 @@ def upload_to_s3(data: Dict, s3_client, bucket: str, prefix: str) -> bool:
             return False
         
         csv_buffer = StringIO()
-        fieldnames = data['records'][0].keys()
+        # Force correct column order to match Snowflake staging table
+        fieldnames = [
+            'SYMBOL',
+            'TIMESTAMP',
+            'OPEN',
+            'HIGH',
+            'LOW',
+            'CLOSE',
+            'ADJUSTED_CLOSE',
+            'VOLUME',
+            'DIVIDEND_AMOUNT',
+            'SPLIT_COEFFICIENT'
+        ]
         writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(data['records'])
+        for row in data['records']:
+            # Ensure all required fields are present, fill missing with empty string
+            csv_row = {k: row.get(k, '') for k in fieldnames}
+            writer.writerow(csv_row)
         
         # Upload to S3
         s3_client.put_object(
