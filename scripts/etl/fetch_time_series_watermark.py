@@ -453,16 +453,33 @@ def main():
     skip_recent_hours = int(os.environ['SKIP_RECENT_HOURS']) if os.environ.get('SKIP_RECENT_HOURS') else None
     batch_size = int(os.environ.get('BATCH_SIZE', '50'))
     
-    # Snowflake configuration
+    # Snowflake configuration (RSA key auth)
+    private_key_path = os.environ.get('SNOWFLAKE_PRIVATE_KEY_PATH', 'snowflake_rsa_key.der')
+    with open(private_key_path, 'rb') as key_file:
+        p_key = key_file.read()
+    import base64
+    import cryptography.hazmat.primitives.serialization as serialization
+    from cryptography.hazmat.backends import default_backend
+    private_key = serialization.load_der_private_key(
+        p_key,
+        password=None,
+        backend=default_backend()
+    )
+    pkb = private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
     snowflake_config = {
         'account': os.environ['SNOWFLAKE_ACCOUNT'],
         'user': os.environ['SNOWFLAKE_USER'],
-        'password': os.environ['SNOWFLAKE_PASSWORD'],
+        'private_key': pkb,
         'database': os.environ['SNOWFLAKE_DATABASE'],
         'schema': os.environ['SNOWFLAKE_SCHEMA'],
         'warehouse': os.environ['SNOWFLAKE_WAREHOUSE']
     }
-    
+
+ 
     # STEP 1: Clean up S3 bucket (no Snowflake connection needed)
     logger.info("=" * 60)
     logger.info("🧹 STEP 1: Clean up existing S3 files")
