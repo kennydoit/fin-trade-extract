@@ -23,6 +23,9 @@ on:
 
 jobs:
   etl:
+    permissions:
+      id-token: write
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Decode Snowflake private key
