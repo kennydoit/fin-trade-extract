@@ -449,7 +449,7 @@ def main():
     s3_prefix = os.environ.get('S3_TIME_SERIES_PREFIX', 'time_series_daily_adjusted/')
     exchange_filter = os.environ.get('EXCHANGE_FILTER')  # NYSE, NASDAQ, or None for all
     max_symbols = int(os.environ['MAX_SYMBOLS']) if os.environ.get('MAX_SYMBOLS') else None
-    staleness_days = int(os.environ.get('STALENESS_DAYS', '5'))
+    staleness_days = 50  # Hard-coded: use compact mode if last_fiscal_date is within 50 days
     skip_recent_hours = int(os.environ['SKIP_RECENT_HOURS']) if os.environ.get('SKIP_RECENT_HOURS') else None
     batch_size = int(os.environ.get('BATCH_SIZE', '50'))
     
