@@ -23,31 +23,34 @@ on:
 
 jobs:
   time-series-watermark-etl:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360  # 6 hours max
     permissions:
       id-token: write
       contents: read
-    runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: '1'
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Decode Snowflake private key
         run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
-
+        working-directory: ${{ github.workspace }}
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install boto3 requests snowflake-connector-python
-
+          pip install boto3 requests snowflake-connector-python pandas
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
-          role-duration-seconds: 43200
-
+          role-duration-seconds: 14400  # or 43200, but <= max session duration
       - name: Fetch time series data using watermarks
         working-directory: ${{ github.workspace }}
         env:
