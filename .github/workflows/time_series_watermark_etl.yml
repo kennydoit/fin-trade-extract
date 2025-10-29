@@ -22,7 +22,7 @@ on:
         type: number
 
 jobs:
-  etl:
+  time-series-watermark-etl:
     permissions:
       id-token: write
       contents: read
@@ -49,6 +49,7 @@ jobs:
           role-duration-seconds: 43200
 
       - name: Fetch time series data using watermarks
+        working-directory: ${{ github.workspace }}
         env:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -92,6 +93,7 @@ jobs:
           python scripts/etl/fetch_time_series_watermark.py
 
       - name: Load time series data into Snowflake
+        working-directory: ${{ github.workspace }}
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
