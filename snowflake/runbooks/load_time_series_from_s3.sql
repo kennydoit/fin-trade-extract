@@ -136,6 +136,6 @@ WHEN NOT MATCHED THEN
     );
 
 -- Step 13: Cleanup staging table
-DROP TABLE IF EXISTS TIME_SERIES_STAGING;
+-- DROP TABLE IF EXISTS TIME_SERIES_STAGING;
 
 SELECT '✅ Time Series data load completed successfully!' as status;
