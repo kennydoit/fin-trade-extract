@@ -434,9 +434,21 @@ def upload_to_s3(data: Dict, s3_client, bucket: str, prefix: str) -> bool:
         ]
         writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
         writer.writeheader()
+        symbol_value = data['symbol']
         for row in data['records']:
-            # Ensure all required fields are present, fill missing with empty string
-            csv_row = {k: row.get(k, '') for k in fieldnames}
+            # Map Alpha Vantage keys (lowercase) to Snowflake column names (uppercase)
+            csv_row = {
+                'SYMBOL': symbol_value,
+                'TIMESTAMP': row.get('timestamp', ''),
+                'OPEN': row.get('open', ''),
+                'HIGH': row.get('high', ''),
+                'LOW': row.get('low', ''),
+                'CLOSE': row.get('close', ''),
+                'ADJUSTED_CLOSE': row.get('adjusted_close', ''),
+                'VOLUME': row.get('volume', ''),
+                'DIVIDEND_AMOUNT': row.get('dividend_amount', ''),
+                'SPLIT_COEFFICIENT': row.get('split_coefficient', '')
+            }
             writer.writerow(csv_row)
         
         # Upload to S3
