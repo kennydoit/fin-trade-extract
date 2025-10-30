@@ -207,25 +207,44 @@ WATERMARK_TEMPLATES = {
 }
 
 def get_snowflake_config():
-    """Get Snowflake configuration from environment variables."""
+    """Get Snowflake configuration from environment variables (private key auth only)."""
     required_vars = [
-        'SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_PASSWORD',
+        'SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER',
         'SNOWFLAKE_DATABASE', 'SNOWFLAKE_SCHEMA', 'SNOWFLAKE_WAREHOUSE'
     ]
-    
     config = {}
     missing_vars = []
-    
     for var in required_vars:
         value = os.getenv(var)
         if not value:
             missing_vars.append(var)
         else:
             config[var.lower().replace('snowflake_', '')] = value
-    
+
+    # Private key path
+    private_key_path = os.environ.get('SNOWFLAKE_PRIVATE_KEY_PATH', 'snowflake_rsa_key.der')
+    if not os.path.exists(private_key_path):
+        missing_vars.append('SNOWFLAKE_PRIVATE_KEY_PATH (file not found)')
+    else:
+        with open(private_key_path, 'rb') as key_file:
+            p_key = key_file.read()
+        import cryptography.hazmat.primitives.serialization as serialization
+        from cryptography.hazmat.backends import default_backend
+        private_key = serialization.load_der_private_key(
+            p_key,
+            password=None,
+            backend=default_backend()
+        )
+        pkb = private_key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+        config['private_key'] = pkb
+
     if missing_vars:
         raise ValueError(f"Missing required environment variables: {missing_vars}")
-        
+
     return config
 
 def create_data_source_watermarks(connection, data_source):
