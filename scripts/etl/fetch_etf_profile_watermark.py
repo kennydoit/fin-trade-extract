@@ -99,13 +99,21 @@ def update_watermark(conn, symbol):
     conn.commit()
     cur.close()
 
+
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='ETF Profile ETL')
+    parser.add_argument('--max-symbols', type=int, default=None, help='Maximum number of symbols to process')
+    args = parser.parse_args()
+
     api_key = os.environ['ALPHAVANTAGE_API_KEY']
     s3_bucket = os.environ.get('S3_BUCKET', 'fin-trade-craft-landing')
     s3_prefix = S3_PREFIX
     conn = get_snowflake_connection()
     s3_client = boto3.client('s3')
     symbols = get_eligible_etf_symbols(conn)
+    if args.max_symbols is not None:
+        symbols = symbols[:args.max_symbols]
     print(f"Found {len(symbols)} eligible ETF symbols.")
     for symbol in symbols:
         data = fetch_etf_profile(symbol, api_key)

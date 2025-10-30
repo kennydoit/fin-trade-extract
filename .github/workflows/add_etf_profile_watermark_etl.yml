@@ -2,6 +2,12 @@ name: ETF Profile Watermark ETL
 
 on:
   workflow_dispatch:
+    inputs:
+      max_symbols:
+        description: 'Maximum number of ETF symbols to process (blank = all)'
+        required: false
+        default: ''
+        type: string
   schedule:
     - cron: '0 6 * * *'
 
@@ -33,7 +39,12 @@ jobs:
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-        run: python scripts/etl/fetch_etf_profile_watermark.py
+        run: |
+          if [ -n "${{ github.event.inputs.max_symbols }}" ]; then
+            python scripts/etl/fetch_etf_profile_watermark.py --max-symbols "${{ github.event.inputs.max_symbols }}"
+          else
+            python scripts/etl/fetch_etf_profile_watermark.py
+          fi
 
       - name: Clean up private key
         run: rm -f snowflake_rsa_key.der
