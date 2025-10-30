@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Add Data Source Watermarks
+        working-directory: ${{ github.workspace }}
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
