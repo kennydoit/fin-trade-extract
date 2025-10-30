@@ -1,4 +1,3 @@
-
 name: Add Data Source Watermarks
 
 on:
@@ -37,7 +36,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scripts/github_actions/requirements.txt
 
+      - name: Decode Snowflake private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
+        working-directory: ${{ github.workspace }}
+
       - name: Add Data Source Watermarks
+        working-directory: ${{ github.workspace }}
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
