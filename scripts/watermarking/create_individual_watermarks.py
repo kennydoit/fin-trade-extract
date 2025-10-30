@@ -18,8 +18,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# SQL templates for each data source
 WATERMARK_TEMPLATES = {
+    'ETF_PROFILE': {
+        'description': 'ETF profile data',
+        'eligibility': "All ETFs (ASSET_TYPE = 'ETF')",
+        'sql': """
+            INSERT INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+                (TABLE_NAME, SYMBOL_ID, SYMBOL, NAME, EXCHANGE, ASSET_TYPE, STATUS, API_ELIGIBLE,
+                 IPO_DATE, DELISTING_DATE, CREATED_AT, UPDATED_AT)
+            SELECT
+                'ETF_PROFILE' as TABLE_NAME,
+                SYMBOL_ID, SYMBOL, NAME, EXCHANGE, ASSET_TYPE, STATUS,
+                CASE WHEN UPPER(ASSET_TYPE) = 'ETF' THEN 'YES' ELSE 'NO' END as API_ELIGIBLE,
+                IPO_DATE, DELISTING_DATE,
+                CURRENT_TIMESTAMP() as CREATED_AT,
+                CURRENT_TIMESTAMP() as UPDATED_AT
+            FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+            WHERE TABLE_NAME = 'LISTING_STATUS'
+              AND NOT EXISTS (
+                  SELECT 1 FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS w2
+                  WHERE w2.TABLE_NAME = 'ETF_PROFILE'
+                    AND w2.SYMBOL_ID = ETL_WATERMARKS.SYMBOL_ID
+              );
+        """
+    },
     'EARNINGS_CALL_TRANSCRIPT': {
         'description': 'Earnings call transcript data',
         'eligibility': "Active common stocks only",
