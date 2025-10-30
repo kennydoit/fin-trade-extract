@@ -42,19 +42,14 @@ def get_snowflake_connection():
         warehouse=os.environ['SNOWFLAKE_WAREHOUSE']
     )
 
-def get_eligible_etf_symbols(conn):
-    # Select eligible ETF symbols from LISTING_STATUS, excluding those already in ETF_PROFILE
+def get_eligible_etf_symbols(conn, max_symbols=None):
+    # Select eligible ETF symbols from ETF_PROFILE watermarks where API_ELIGIBLE = 'YES', with optional LIMIT
     query = """
-        SELECT SYMBOL FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS ls
-        WHERE ls.TABLE_NAME = 'LISTING_STATUS'
-          AND UPPER(ls.ASSET_TYPE) = 'ETF'
-          AND UPPER(ls.STATUS) = 'ACTIVE'
-          AND NOT EXISTS (
-              SELECT 1 FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS ep
-              WHERE ep.TABLE_NAME = 'ETF_PROFILE'
-                AND ep.SYMBOL = ls.SYMBOL
-          )
+        SELECT SYMBOL FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+        WHERE TABLE_NAME = 'ETF_PROFILE' AND API_ELIGIBLE = 'YES'
     """
+    if max_symbols is not None:
+        query += f" LIMIT {int(max_symbols)}"
     cur = conn.cursor()
     cur.execute(query)
     symbols = [row[0] for row in cur.fetchall()]
@@ -90,14 +85,8 @@ def upload_json_to_s3(symbol, data, s3_client, bucket, prefix):
     print(f"Uploaded {symbol} ETF profile to s3://{bucket}/{key}")
 
 def update_watermark(conn, symbol):
-    cur = conn.cursor()
-    cur.execute(f"""
-        UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-        SET LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(), CONSECUTIVE_FAILURES = 0
-        WHERE TABLE_NAME = 'ETF_PROFILE' AND SYMBOL = %s
-    """, (symbol,))
-    conn.commit()
-    cur.close()
+    # Bulk update: set LAST_SUCCESSFUL_RUN and CONSECUTIVE_FAILURES for all processed symbols
+    pass
 
 
 def main():
@@ -111,18 +100,42 @@ def main():
     s3_prefix = S3_PREFIX
     conn = get_snowflake_connection()
     s3_client = boto3.client('s3')
-    symbols = get_eligible_etf_symbols(conn)
-    if args.max_symbols is not None:
-        symbols = symbols[:args.max_symbols]
+    symbols = get_eligible_etf_symbols(conn, args.max_symbols)
+    if not symbols:
+        # If no eligible symbols, set all ETF_PROFILE API_ELIGIBLE to 'SUS'
+        print("No eligible ETF symbols found. Marking all ETF_PROFILE watermarks as SUS.")
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+            SET API_ELIGIBLE = 'SUS'
+            WHERE TABLE_NAME = 'ETF_PROFILE' AND API_ELIGIBLE != 'SUS'
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("ETF Profile ETL complete.")
+        return
+
     print(f"Found {len(symbols)} eligible ETF symbols.")
+    processed = []
     for idx, symbol in enumerate(symbols, 1):
         print(f"[{idx}] {symbol}")
         data = fetch_etf_profile(symbol, api_key)
         if data:
             upload_json_to_s3(symbol, data, s3_client, s3_bucket, s3_prefix)
-            update_watermark(conn, symbol)
+            processed.append(symbol)
         else:
             print(f"Skipping {symbol} due to missing data.")
+    # Bulk update watermarks for all processed symbols
+    if processed:
+        cur = conn.cursor()
+        cur.execute(f"""
+            UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+            SET LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(), CONSECUTIVE_FAILURES = 0
+            WHERE TABLE_NAME = 'ETF_PROFILE' AND SYMBOL IN ({','.join(['%s']*len(processed))})
+        """, processed)
+        conn.commit()
+        cur.close()
     conn.close()
     print("ETF Profile ETL complete.")
 
