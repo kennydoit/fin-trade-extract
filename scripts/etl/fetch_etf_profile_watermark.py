@@ -43,9 +43,17 @@ def get_snowflake_connection():
     )
 
 def get_eligible_etf_symbols(conn):
+    # Select eligible ETF symbols from LISTING_STATUS, excluding those already in ETF_PROFILE
     query = """
-        SELECT SYMBOL FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-        WHERE TABLE_NAME = 'ETF_PROFILE' AND API_ELIGIBLE = 'YES'
+        SELECT SYMBOL FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS ls
+        WHERE ls.TABLE_NAME = 'LISTING_STATUS'
+          AND UPPER(ls.ASSET_TYPE) = 'ETF'
+          AND UPPER(ls.STATUS) = 'ACTIVE'
+          AND NOT EXISTS (
+              SELECT 1 FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS ep
+              WHERE ep.TABLE_NAME = 'ETF_PROFILE'
+                AND ep.SYMBOL = ls.SYMBOL
+          )
     """
     cur = conn.cursor()
     cur.execute(query)
