@@ -115,7 +115,8 @@ def main():
     if args.max_symbols is not None:
         symbols = symbols[:args.max_symbols]
     print(f"Found {len(symbols)} eligible ETF symbols.")
-    for symbol in symbols:
+    for idx, symbol in enumerate(symbols, 1):
+        print(f"[{idx}] {symbol}")
         data = fetch_etf_profile(symbol, api_key)
         if data:
             upload_json_to_s3(symbol, data, s3_client, s3_bucket, s3_prefix)
