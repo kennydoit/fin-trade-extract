@@ -1,3 +1,4 @@
+
 name: Add Data Source Watermarks
 
 on:
@@ -43,6 +44,7 @@ jobs:
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_PRIVATE_KEY_PATH: snowflake_rsa_key.der
         run: |
           echo "🚀 Creating data source watermarks"
           echo "📅 Timestamp: $(date)"
