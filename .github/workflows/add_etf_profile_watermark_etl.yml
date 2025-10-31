@@ -57,6 +57,18 @@ jobs:
             python scripts/etl/fetch_etf_profile_watermark.py
           fi
 
+      - name: Load ETF profile data into Snowflake
+        working-directory: ${{ github.workspace }}
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+        run: |
+          echo "🗄️ Loading ETF profile data into Snowflake..."
+          python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_etf_profile_from_s3.sql
+
       - name: Clean up private key
         run: rm -f snowflake_rsa_key.der
         working-directory: ${{ github.workspace }}
