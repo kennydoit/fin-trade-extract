@@ -67,8 +67,13 @@ def fetch_etf_profile(symbol, api_key):
         resp = requests.get(url, params=params, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-        if not data or 'Symbol' not in data:
-            print(f"No ETF profile data for {symbol}")
+        # Alpha Vantage returns an error message as a dict with 'Error Message' or 'Note' keys
+        if not data or (isinstance(data, dict) and ("Error Message" in data or "Note" in data)):
+            print(f"No ETF profile data for {symbol} (API error or note)")
+            return None
+        # Check for at least one expected ETF profile key
+        if not ("holdings" in data or "net_assets" in data):
+            print(f"No ETF profile data for {symbol} (missing expected keys)")
             return None
         return data
     except Exception as e:
