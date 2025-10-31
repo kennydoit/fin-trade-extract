@@ -31,10 +31,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scripts/github_actions/requirements.txt
 
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-duration-seconds: 14400
+
       - name: Run ETF Profile ETL
         working-directory: ${{ github.workspace }}
         env:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
           S3_BUCKET: fin-trade-craft-landing
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
