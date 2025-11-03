@@ -364,9 +364,15 @@ def main():
         data = fetch_insider_transactions_data(symbol, api_key)
 
         if data and upload_to_s3(symbol, data, s3_client, s3_bucket, s3_prefix):
+            logger.info(f"[{i}] pulled {symbol} ({len(data)} records)")
             results['successful'] += 1
             results['successful_symbols'].append(symbol)
+        elif data is None:
+            logger.info(f"[{i}] no data for {symbol}")
+            results['failed'] += 1
+            results['failed_symbols'].append(symbol)
         else:
+            logger.info(f"[{i}] failed to upload {symbol}")
             results['failed'] += 1
             results['failed_symbols'].append(symbol)
 
