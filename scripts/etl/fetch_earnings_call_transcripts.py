@@ -1,5 +1,3 @@
-
-
 import os
 import sys
 import datetime
@@ -233,6 +231,15 @@ def main():
     failed_symbols = []
     sus_symbols = []
 
+    # Query existing (symbol, year, quarter) in the target table for each symbol
+    def get_existing_quarters(cur, symbol):
+        cur.execute(f"""
+            SELECT DISTINCT YEAR, QUARTER
+            FROM EARNINGS_CALL_TRANSCRIPTS
+            WHERE SYMBOL = %s
+        """, (symbol,))
+        return set((row[0], row[1]) for row in cur.fetchall())
+
     symbol_count = 0
     for symbol, ipo_date, last_fiscal_date in rows:
         symbol_count += 1
@@ -241,14 +248,17 @@ def main():
         else:
             start_date = first_full_quarter_after(ipo_date)
         quarters = get_quarters(start_date, TODAY)
+        # Get existing (year, quarter) for this symbol
+        existing_quarters = get_existing_quarters(cur, symbol)
         found_data = False
         first_date = None
         last_date = None
         for year, quarter in quarters:
+            if (year, quarter) in existing_quarters:
+                continue  # Skip if already present
             data = fetch_transcript(symbol, year, quarter, api_key)
             if data and "transcript" in data and data["transcript"]:
                 found_data = True
-                # Set first/last date for watermark update
                 fiscal_date = f"{year}-{'0' if quarter < 10 else ''}{(quarter-1)*3+1:02d}-01"
                 if not first_date:
                     first_date = fiscal_date
