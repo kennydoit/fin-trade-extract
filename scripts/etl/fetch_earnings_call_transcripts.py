@@ -8,6 +8,7 @@ import boto3
 import csv
 import json
 from io import StringIO
+import argparse
 
 # Constants
 API_KEY = None  # Will be set in main()
@@ -164,6 +165,11 @@ def bulk_update_watermarks(cur, successful_updates, failed_symbols):
         print(f"🔒 Marked symbols as SUS if failures >= {threshold}.")
 
 def main():
+    parser = argparse.ArgumentParser(description='Earnings Call Transcript ETL')
+    parser.add_argument('--exchange', type=str, default='ALL', help='Exchange to process (default: ALL)')
+    args = parser.parse_args()
+    exchange = args.exchange.strip().upper() if args.exchange else 'ALL'
+
     # Get API key from environment (strict)
     api_key = os.environ["ALPHAVANTAGE_API_KEY"]
     bucket = os.environ["S3_BUCKET"]
@@ -216,6 +222,10 @@ def main():
         WHERE TABLE_NAME = 'EARNINGS_CALL_TRANSCRIPT'
           AND API_ELIGIBLE = 'YES'
           AND STATUS = 'Active'
+    """
+    if exchange != 'ALL':
+        query += f" AND UPPER(EXCHANGE) = '{exchange}'\n"
+    query += """
           AND (LAST_FISCAL_DATE IS NULL 
                OR LAST_FISCAL_DATE < DATEADD(day, -135, CURRENT_DATE())
                )
@@ -235,7 +245,7 @@ def main():
     def get_existing_quarters(cur, symbol):
         cur.execute(f"""
             SELECT DISTINCT YEAR, QUARTER
-            FROM EARNINGS_CALL_TRANSCRIPTS
+            FROM EARNINGS_CALL_TRANSCRIPT
             WHERE SYMBOL = %s
         """, (symbol,))
         return set((row[0], row[1]) for row in cur.fetchall())
