@@ -147,7 +147,7 @@ MERGE INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET target
 USING (
     SELECT 
     symbol AS SYMBOL,
-    TRY_TO_DATE(fiscalDateEnding) AS FISCAL_DATE_ENDING,
+    TRY_TO_DATE(FISCAL_DATE_ENDING) AS FISCAL_DATE_ENDING,
     period_type AS PERIOD_TYPE,
     reportedCurrency AS REPORTED_CURRENCY,
         
@@ -196,7 +196,7 @@ USING (
         CURRENT_TIMESTAMP() AS LOAD_DATE
         
     FROM FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING
-        WHERE TRY_TO_DATE(fiscalDateEnding) IS NOT NULL
+    WHERE TRY_TO_DATE(FISCAL_DATE_ENDING) IS NOT NULL
             AND symbol IS NOT NULL
             AND period_type IN ('annual', 'quarterly')
 ) source
