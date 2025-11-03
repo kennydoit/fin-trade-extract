@@ -15,21 +15,23 @@ CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.ETF_PROFILE_STAGE
 
 -- Create parsed target table for ETF Profile
 CREATE OR REPLACE TABLE FIN_TRADE_EXTRACT.RAW.ETF_PROFILE (
-    SYMBOL VARCHAR(20) PRIMARY KEY,
-    NET_ASSETS VARCHAR,
-    NET_EXPENSE_RATIO VARCHAR,
-    PORTFOLIO_TURNOVER VARCHAR,
-    DIVIDEND_YIELD VARCHAR,
-    INCEPTION_DATE VARCHAR,
-    LEVERAGED VARCHAR,
-    SECTORS ARRAY,
-    HOLDINGS ARRAY,
-    LOAD_DATE DATE DEFAULT CURRENT_DATE()
+  SYMBOL_ID NUMBER PRIMARY KEY,
+  SYMBOL VARCHAR(20),
+  NET_ASSETS VARCHAR,
+  NET_EXPENSE_RATIO VARCHAR,
+  PORTFOLIO_TURNOVER VARCHAR,
+  DIVIDEND_YIELD VARCHAR,
+  INCEPTION_DATE VARCHAR,
+  LEVERAGED VARCHAR,
+  SECTORS ARRAY,
+  HOLDINGS ARRAY,
+  LOAD_DATE DATE DEFAULT CURRENT_DATE()
 );
 
 -- Load and parse data from S3 directly into the parsed table
 INSERT OVERWRITE INTO FIN_TRADE_EXTRACT.RAW.ETF_PROFILE
 SELECT
+  ABS(MOD(FARM_FINGERPRINT(SPLIT_PART(SPLIT_PART(METADATA$FILENAME, '/', -1), '.', 1)), 1000000000)) AS SYMBOL_ID,
   SPLIT_PART(SPLIT_PART(METADATA$FILENAME, '/', -1), '.', 1)::STRING AS SYMBOL,
   $1:"net_assets"::STRING AS NET_ASSETS,
   $1:"net_expense_ratio"::STRING AS NET_EXPENSE_RATIO,
@@ -44,24 +46,49 @@ FROM @FIN_TRADE_EXTRACT.RAW.ETF_PROFILE_STAGE;
 
 -- Show load results
 SELECT COUNT(*) AS total_records FROM FIN_TRADE_EXTRACT.RAW.ETF_PROFILE;
+SELECT SYMBOL, SYMBOL_ID FROM FIN_TRADE_EXTRACT.RAW.ETF_PROFILE LIMIT 10;
 
--- Flatten sectors array (view)
+
+
+-- Flatten sectors array (one record per entry, with renamed columns and holding_sector)
 CREATE OR REPLACE VIEW FIN_TRADE_EXTRACT.RAW.ETF_PROFILE_SECTORS AS
 SELECT
+  SYMBOL_ID,
   SYMBOL,
-  sector.value:sector::STRING AS sector,
-  sector.value:weight::STRING AS weight,
+  sector.value:sector::STRING AS sector_name,
+  sector.value:weight::STRING AS sector_weight,
+  'SECTORS' AS holding_sector,
   LOAD_DATE
 FROM FIN_TRADE_EXTRACT.RAW.ETF_PROFILE,
   LATERAL FLATTEN(input => SECTORS) sector;
 
--- Flatten holdings array (view)
-CREATE OR REPLACE VIEW FIN_TRADE_EXTRACT.RAW.ETF_PROFILE_HOLDINGS AS
+
+
+
+-- Create a single final detail table with one record per sector or holding
+CREATE OR REPLACE TABLE FIN_TRADE_EXTRACT.RAW.ETF_PROFILE_DETAIL AS
 SELECT
+  SYMBOL_ID,
+  SYMBOL,
+  NULL AS holding_symbol,
+  NULL AS holding_description,
+  NULL AS holding_weight,
+  sector.value:sector::STRING AS sector_name,
+  sector.value:weight::STRING AS sector_weight,
+  'SECTORS' AS holding_sector,
+  LOAD_DATE
+FROM FIN_TRADE_EXTRACT.RAW.ETF_PROFILE,
+  LATERAL FLATTEN(input => SECTORS) sector
+UNION ALL
+SELECT
+  SYMBOL_ID,
   SYMBOL,
   holding.value:symbol::STRING AS holding_symbol,
-  holding.value:description::STRING AS description,
-  holding.value:weight::STRING AS weight,
+  holding.value:description::STRING AS holding_description,
+  holding.value:weight::STRING AS holding_weight,
+  NULL AS sector_name,
+  NULL AS sector_weight,
+  'HOLDINGS' AS holding_sector,
   LOAD_DATE
 FROM FIN_TRADE_EXTRACT.RAW.ETF_PROFILE,
   LATERAL FLATTEN(input => HOLDINGS) holding;
