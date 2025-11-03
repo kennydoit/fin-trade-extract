@@ -146,59 +146,59 @@ ON_ERROR = 'CONTINUE';
 MERGE INTO FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET target
 USING (
     SELECT 
-        "symbol" AS SYMBOL,
-        TRY_TO_DATE("fiscalDateEnding") AS FISCAL_DATE_ENDING,
-        "period_type" AS PERIOD_TYPE,
-        "reportedCurrency" AS REPORTED_CURRENCY,
+    symbol AS SYMBOL,
+    TRY_TO_DATE(fiscalDateEnding) AS FISCAL_DATE_ENDING,
+    period_type AS PERIOD_TYPE,
+    reportedCurrency AS REPORTED_CURRENCY,
         
         -- Assets
-        TRY_TO_NUMBER("totalAssets", 38, 2) AS TOTAL_ASSETS,
-        TRY_TO_NUMBER("totalCurrentAssets", 38, 2) AS TOTAL_CURRENT_ASSETS,
-        TRY_TO_NUMBER("cashAndCashEquivalentsAtCarryingValue", 38, 2) AS CASH_AND_CASH_EQUIVALENTS,
-        TRY_TO_NUMBER("cashAndShortTermInvestments", 38, 2) AS CASH_AND_SHORT_TERM_INVESTMENTS,
-        TRY_TO_NUMBER("inventory", 38, 2) AS INVENTORY,
-        TRY_TO_NUMBER("currentNetReceivables", 38, 2) AS CURRENT_NET_RECEIVABLES,
-        TRY_TO_NUMBER("totalNonCurrentAssets", 38, 2) AS TOTAL_NON_CURRENT_ASSETS,
-        TRY_TO_NUMBER("propertyPlantEquipment", 38, 2) AS PROPERTY_PLANT_EQUIPMENT,
-        TRY_TO_NUMBER("accumulatedDepreciationAmortizationPPE", 38, 2) AS ACCUMULATED_DEPRECIATION_AMORTIZATION_PPE,
-        TRY_TO_NUMBER("intangibleAssets", 38, 2) AS INTANGIBLE_ASSETS,
-        TRY_TO_NUMBER("goodwill", 38, 2) AS GOODWILL,
-        TRY_TO_NUMBER("investments", 38, 2) AS INVESTMENTS,
-        TRY_TO_NUMBER("longTermInvestments", 38, 2) AS LONG_TERM_INVESTMENTS,
-        TRY_TO_NUMBER("shortTermInvestments", 38, 2) AS SHORT_TERM_INVESTMENTS,
-        TRY_TO_NUMBER("otherCurrentAssets", 38, 2) AS OTHER_CURRENT_ASSETS,
-        TRY_TO_NUMBER("otherNonCurrentAssets", 38, 2) AS OTHER_NON_CURRENT_ASSETS,
+    TRY_TO_NUMBER(totalAssets, 38, 2) AS TOTAL_ASSETS,
+    TRY_TO_NUMBER(totalCurrentAssets, 38, 2) AS TOTAL_CURRENT_ASSETS,
+    TRY_TO_NUMBER(cashAndCashEquivalentsAtCarryingValue, 38, 2) AS CASH_AND_CASH_EQUIVALENTS,
+    TRY_TO_NUMBER(cashAndShortTermInvestments, 38, 2) AS CASH_AND_SHORT_TERM_INVESTMENTS,
+    TRY_TO_NUMBER(inventory, 38, 2) AS INVENTORY,
+    TRY_TO_NUMBER(currentNetReceivables, 38, 2) AS CURRENT_NET_RECEIVABLES,
+    TRY_TO_NUMBER(totalNonCurrentAssets, 38, 2) AS TOTAL_NON_CURRENT_ASSETS,
+    TRY_TO_NUMBER(propertyPlantEquipment, 38, 2) AS PROPERTY_PLANT_EQUIPMENT,
+    TRY_TO_NUMBER(accumulatedDepreciationAmortizationPPE, 38, 2) AS ACCUMULATED_DEPRECIATION_AMORTIZATION_PPE,
+    TRY_TO_NUMBER(intangibleAssets, 38, 2) AS INTANGIBLE_ASSETS,
+    TRY_TO_NUMBER(goodwill, 38, 2) AS GOODWILL,
+    TRY_TO_NUMBER(investments, 38, 2) AS INVESTMENTS,
+    TRY_TO_NUMBER(longTermInvestments, 38, 2) AS LONG_TERM_INVESTMENTS,
+    TRY_TO_NUMBER(shortTermInvestments, 38, 2) AS SHORT_TERM_INVESTMENTS,
+    TRY_TO_NUMBER(otherCurrentAssets, 38, 2) AS OTHER_CURRENT_ASSETS,
+    TRY_TO_NUMBER(otherNonCurrentAssets, 38, 2) AS OTHER_NON_CURRENT_ASSETS,
         
         -- Liabilities
-        TRY_TO_NUMBER("totalLiabilities", 38, 2) AS TOTAL_LIABILITIES,
-        TRY_TO_NUMBER("totalCurrentLiabilities", 38, 2) AS TOTAL_CURRENT_LIABILITIES,
-        TRY_TO_NUMBER("currentAccountsPayable", 38, 2) AS CURRENT_ACCOUNTS_PAYABLE,
-        TRY_TO_NUMBER("deferredRevenue", 38, 2) AS DEFERRED_REVENUE,
-        TRY_TO_NUMBER("currentDebt", 38, 2) AS CURRENT_DEBT,
-        TRY_TO_NUMBER("shortTermDebt", 38, 2) AS SHORT_TERM_DEBT,
-        TRY_TO_NUMBER("totalNonCurrentLiabilities", 38, 2) AS TOTAL_NON_CURRENT_LIABILITIES,
-        TRY_TO_NUMBER("capitalLeaseObligations", 38, 2) AS CAPITAL_LEASE_OBLIGATIONS,
-        TRY_TO_NUMBER("longTermDebt", 38, 2) AS LONG_TERM_DEBT,
-        TRY_TO_NUMBER("currentLongTermDebt", 38, 2) AS CURRENT_LONG_TERM_DEBT,
-        TRY_TO_NUMBER("longTermDebtNoncurrent", 38, 2) AS LONG_TERM_DEBT_NONCURRENT,
-        TRY_TO_NUMBER("otherCurrentLiabilities", 38, 2) AS OTHER_CURRENT_LIABILITIES,
-        TRY_TO_NUMBER("otherNonCurrentLiabilities", 38, 2) AS OTHER_NON_CURRENT_LIABILITIES,
+    TRY_TO_NUMBER(totalLiabilities, 38, 2) AS TOTAL_LIABILITIES,
+    TRY_TO_NUMBER(totalCurrentLiabilities, 38, 2) AS TOTAL_CURRENT_LIABILITIES,
+    TRY_TO_NUMBER(currentAccountsPayable, 38, 2) AS CURRENT_ACCOUNTS_PAYABLE,
+    TRY_TO_NUMBER(deferredRevenue, 38, 2) AS DEFERRED_REVENUE,
+    TRY_TO_NUMBER(currentDebt, 38, 2) AS CURRENT_DEBT,
+    TRY_TO_NUMBER(shortTermDebt, 38, 2) AS SHORT_TERM_DEBT,
+    TRY_TO_NUMBER(totalNonCurrentLiabilities, 38, 2) AS TOTAL_NON_CURRENT_LIABILITIES,
+    TRY_TO_NUMBER(capitalLeaseObligations, 38, 2) AS CAPITAL_LEASE_OBLIGATIONS,
+    TRY_TO_NUMBER(longTermDebt, 38, 2) AS LONG_TERM_DEBT,
+    TRY_TO_NUMBER(currentLongTermDebt, 38, 2) AS CURRENT_LONG_TERM_DEBT,
+    TRY_TO_NUMBER(longTermDebtNoncurrent, 38, 2) AS LONG_TERM_DEBT_NONCURRENT,
+    TRY_TO_NUMBER(otherCurrentLiabilities, 38, 2) AS OTHER_CURRENT_LIABILITIES,
+    TRY_TO_NUMBER(otherNonCurrentLiabilities, 38, 2) AS OTHER_NON_CURRENT_LIABILITIES,
         
         -- Equity
-        TRY_TO_NUMBER("totalShareholderEquity", 38, 2) AS TOTAL_SHAREHOLDER_EQUITY,
-        TRY_TO_NUMBER("treasuryStock", 38, 2) AS TREASURY_STOCK,
-        TRY_TO_NUMBER("retainedEarnings", 38, 2) AS RETAINED_EARNINGS,
-        TRY_TO_NUMBER("commonStock", 38, 2) AS COMMON_STOCK,
-        TRY_TO_NUMBER("commonStockSharesOutstanding", 38, 0) AS COMMON_STOCK_SHARES_OUTSTANDING,
+    TRY_TO_NUMBER(totalShareholderEquity, 38, 2) AS TOTAL_SHAREHOLDER_EQUITY,
+    TRY_TO_NUMBER(treasuryStock, 38, 2) AS TREASURY_STOCK,
+    TRY_TO_NUMBER(retainedEarnings, 38, 2) AS RETAINED_EARNINGS,
+    TRY_TO_NUMBER(commonStock, 38, 2) AS COMMON_STOCK,
+    TRY_TO_NUMBER(commonStockSharesOutstanding, 38, 0) AS COMMON_STOCK_SHARES_OUTSTANDING,
         
         -- Metadata
         NULL AS SYMBOL_ID,
         CURRENT_TIMESTAMP() AS LOAD_DATE
         
     FROM FIN_TRADE_EXTRACT.RAW.BALANCE_SHEET_STAGING
-    WHERE TRY_TO_DATE("fiscalDateEnding") IS NOT NULL
-      AND "symbol" IS NOT NULL
-      AND "period_type" IN ('annual', 'quarterly')
+        WHERE TRY_TO_DATE(fiscalDateEnding) IS NOT NULL
+            AND symbol IS NOT NULL
+            AND period_type IN ('annual', 'quarterly')
 ) source
 ON target.SYMBOL = source.SYMBOL
    AND target.FISCAL_DATE_ENDING = source.FISCAL_DATE_ENDING
