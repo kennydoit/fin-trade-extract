@@ -100,6 +100,20 @@ def main():
     s3_prefix = S3_PREFIX
     conn = get_snowflake_connection()
     s3_client = boto3.client('s3')
+
+    # Clear out the S3 etf_profile/ prefix before uploading new data
+    print(f"Clearing S3 prefix: s3://{s3_bucket}/{s3_prefix}")
+    paginator = s3_client.get_paginator('list_objects_v2')
+    pages = paginator.paginate(Bucket=s3_bucket, Prefix=s3_prefix)
+    keys_to_delete = []
+    for page in pages:
+        for obj in page.get('Contents', []):
+            keys_to_delete.append({'Key': obj['Key']})
+    if keys_to_delete:
+        print(f"Deleting {len(keys_to_delete)} objects from S3 prefix {s3_prefix}")
+        s3_client.delete_objects(Bucket=s3_bucket, Delete={'Objects': keys_to_delete})
+    else:
+        print("No existing objects to delete in S3 prefix.")
     symbols = get_eligible_etf_symbols(conn, args.max_symbols)
     if not symbols:
         # If no eligible symbols, set all ETF_PROFILE API_ELIGIBLE to 'SUS'
