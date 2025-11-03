@@ -109,7 +109,7 @@ jobs:
         echo "  - Update watermarks with fiscal date range"
         echo "  - Mark delisted stocks as 'DEL' after successful extraction"
         echo ""
-        python scripts/etl/fetch_balance_sheet_watermark.py
+          python ./scripts/etl/fetch_balance_sheet_watermark.py
 
     - name: Load balance sheet data into Snowflake
       working-directory: ${{ github.workspace }}
