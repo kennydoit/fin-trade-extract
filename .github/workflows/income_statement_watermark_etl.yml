@@ -1,19 +1,18 @@
-# Renamed for GitHub Actions UI compatibility
-name: Insider Transactions ETL - Watermark Based
+name: Income Statement ETL - Watermark Based
 
 on:
   workflow_dispatch:
     inputs:
       exchange_filter:
-        description: 'Exchange to process (NYSE, NASDAQ, AMEX, or ALL for all)'
+        description: 'Exchange to process (NYSE, NASDAQ, or leave blank for all)'
         required: false
         type: choice
         options:
-          - ALL
+          - ''
           - NYSE
           - NASDAQ
           - AMEX
-        default: ALL
+        default: ''
       max_symbols:
         description: 'Maximum number of symbols to process (blank = all eligible symbols)'
         required: false
@@ -26,18 +25,13 @@ on:
         description: 'Number of symbols to process per batch'
         required: false
         type: number
-        default: 100
-      consecutive_failure_threshold:
-        description: 'Omit symbols with how many consecutive failures?'
-        required: false
-        type: number
-        default: 3
+        default: 50
   schedule:
-    # Run monthly on 1st at 4 AM UTC (insider trading data is sporadic)
-    - cron: '0 4 1 * *'
+    # Run weekly on Sunday at 5 AM UTC (fundamentals don't change daily)
+    - cron: '0 5 * * 0'
 
 jobs:
-  watermark-insider-transactions-etl:
+  watermark-income-statement-etl:
     runs-on: ubuntu-22.04
     timeout-minutes: 360  # 6 hours max
     permissions:
@@ -49,8 +43,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      with:
-        ref: ${{ github.ref }}
 
 
     - name: Decode Snowflake private key
@@ -72,15 +64,15 @@ jobs:
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
         aws-region: ${{ secrets.AWS_REGION }}
-        role-duration-seconds: 43200
+        role-duration-seconds: 14400  # or 43200, but <= max session duration
 
-    - name: Fetch insider transactions data using watermarks
+    - name: Fetch income statement data using watermarks
       working-directory: ${{ github.workspace }}
       env:
         ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
         AWS_REGION: ${{ secrets.AWS_REGION }}
         S3_BUCKET: fin-trade-craft-landing
-        S3_INSIDER_TRANSACTIONS_PREFIX: insider_transactions/
+        S3_INCOME_STATEMENT_PREFIX: income_statement/
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
         SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
         SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
@@ -89,11 +81,10 @@ jobs:
         EXCHANGE_FILTER: ${{ inputs.exchange_filter }}
         MAX_SYMBOLS: ${{ inputs.max_symbols }}
         SKIP_RECENT_HOURS: ${{ inputs.skip_recent_hours }}
-        BATCH_SIZE: ${{ inputs.batch_size }}
-        CONSECUTIVE_FAILURE_THRESHOLD: ${{ inputs.consecutive_failure_threshold }}
+        BATCH_SIZE: ${{ inputs.batch_size || '50' }}
       run: |
-        echo "🚀 Starting watermark-based insider transactions ETL..."
-        if [ "$EXCHANGE_FILTER" != "ALL" ]; then
+        echo "🚀 Starting watermark-based income statement ETL..."
+        if [ -n "$EXCHANGE_FILTER" ]; then
           echo "🏢 Exchange filter: $EXCHANGE_FILTER"
         else
           echo "🌐 Processing: All exchanges"
@@ -110,16 +101,15 @@ jobs:
         fi
         echo "📋 Batch size: $BATCH_SIZE symbols"
         echo ""
-        echo "📍 Insider Transactions Logic:"
+        echo "📍 Income Statement Logic:"
         echo "  - Only active common stocks (ASSET_TYPE='Stock' AND STATUS='Active')"
-        echo "  - NO staleness check (insider trading is sporadic and unpredictable)"
-        echo "  - Tracks executive/director buy/sell transactions"
-        echo "  - Update watermarks with transaction date range"
+        echo "  - Annual + Quarterly reports from Alpha Vantage API"
+        echo "  - Update watermarks with fiscal date range"
+        echo "  - Mark delisted stocks as 'DEL' after successful extraction"
         echo ""
-        echo "Running Insider Transactions ETL fetch script..."
-        python scripts/etl/fetch_insider_transactions_watermark.py
+        python scripts/etl/fetch_income_statement_watermark.py
 
-    - name: Load insider transactions data into Snowflake
+    - name: Load income statement data into Snowflake
       working-directory: ${{ github.workspace }}
       env:
         SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
@@ -128,8 +118,8 @@ jobs:
         SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
         SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
       run: |
-        echo "🗄️ Loading insider transactions data into Snowflake..."
-        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_insider_transactions_from_s3.sql
+        echo "🗄️ Loading income statement data into Snowflake..."
+        python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_income_statement_from_s3.sql
 
     - name: Clean up private key
       run: rm -f snowflake_rsa_key.der
@@ -139,15 +129,15 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: insider-transactions-etl-results-${{ github.run_number }}
+        name: watermark-etl-results-${{ github.run_number }}
         path: /tmp/watermark_etl_results.json
         retention-days: 30
 
     - name: Summary Report
       if: always()
       run: |
-        echo "📊 INSIDER TRANSACTIONS WATERMARK-BASED ETL SUMMARY"
-        echo "==================================================="
+        echo "📊 WATERMARK-BASED ETL PROCESSING SUMMARY"
+        echo "=========================================="
         if [ -n "${{ inputs.exchange_filter }}" ]; then
           echo "🏢 Exchange: ${{ inputs.exchange_filter }}"
         else
@@ -173,15 +163,17 @@ jobs:
         print(f'')
         print(f'✅ Watermarks updated for {results[\"successful\"]} symbols')
         print(f'   - FIRST_FISCAL_DATE set (if NULL)')
-        print(f'   - LAST_FISCAL_DATE updated to latest transaction date')
+        print(f'   - LAST_FISCAL_DATE updated to latest data')
         print(f'   - LAST_SUCCESSFUL_RUN = current timestamp')
         print(f'   - CONSECUTIVE_FAILURES reset to 0')
         
-        print(f'')
-        print(f'📝 Note: Insider trading data is sporadic')
-        print(f'   Many symbols may have zero transactions (this is normal)')
-        print(f'   Companies with active insider trading will show multiple transactions')
+        # Show delisted symbols marked
+        if results.get('delisted_marked', 0) > 0:
+            print(f'')
+            print(f'🔒 Delisted symbols marked as API_ELIGIBLE=\"DEL\": {results[\"delisted_marked\"]}')
+            print(f'   (Symbols with DELISTING_DATE that have been successfully extracted)')
         "
         else
           echo "❌ No results file found - check logs for errors"
         fi
+
