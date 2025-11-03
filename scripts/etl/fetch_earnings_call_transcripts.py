@@ -241,31 +241,24 @@ def main():
     failed_symbols = []
     sus_symbols = []
 
-    # Query existing (symbol, year, quarter) in the target table for each symbol
-    def get_existing_quarters(cur, symbol):
-        cur.execute(f"""
-            SELECT DISTINCT YEAR, QUARTER
-            FROM EARNINGS_CALL_TRANSCRIPT
-            WHERE SYMBOL = %s
-        """, (symbol,))
-        return set((row[0], row[1]) for row in cur.fetchall())
 
     symbol_count = 0
     for symbol, ipo_date, last_fiscal_date in rows:
         symbol_count += 1
-        if ipo_date is None or ipo_date < datetime.date(START_YEAR, 1, 1):
-            start_date = datetime.date(START_YEAR, 1, 1)
-        else:
+        # Determine the forward-looking start date: first full quarter after LAST_FISCAL_DATE or IPO_DATE or START_YEAR
+        if last_fiscal_date is not None:
+            # last_fiscal_date is a datetime.date or None
+            start_date = first_full_quarter_after(last_fiscal_date)
+        elif ipo_date is not None and ipo_date >= datetime.date(START_YEAR, 1, 1):
             start_date = first_full_quarter_after(ipo_date)
+        else:
+            start_date = datetime.date(START_YEAR, 1, 1)
+
         quarters = get_quarters(start_date, TODAY)
-        # Get existing (year, quarter) for this symbol
-        existing_quarters = get_existing_quarters(cur, symbol)
         found_data = False
         first_date = None
         last_date = None
         for year, quarter in quarters:
-            if (year, quarter) in existing_quarters:
-                continue  # Skip if already present
             data = fetch_transcript(symbol, year, quarter, api_key)
             if data and "transcript" in data and data["transcript"]:
                 found_data = True
