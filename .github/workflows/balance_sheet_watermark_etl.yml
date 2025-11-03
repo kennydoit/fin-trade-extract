@@ -40,7 +40,7 @@ jobs:
       id-token: write
       contents: read
     env:
-      # (add any global environment variables here if needed)
+      PYTHONUNBUFFERED: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
