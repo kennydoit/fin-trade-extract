@@ -64,7 +64,7 @@ jobs:
           SNOWFLAKE_SCHEMA: RAW
           SNOWFLAKE_WAREHOUSE: FIN_TRADE_WH
         run: |
-          python scripts/etl/load_economic_indicators_from_s3.py
+          python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_economic_indicators_from_s3.sql
 
       - name: Cleanup Snowflake private key
         if: always()
