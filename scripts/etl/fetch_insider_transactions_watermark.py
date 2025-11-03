@@ -74,7 +74,8 @@ class WatermarkETLManager:
             query += f"""
               AND (CONSECUTIVE_FAILURES IS NULL OR CONSECUTIVE_FAILURES < {consecutive_failure_threshold})
             """
-        if exchange_filter:
+        # Treat 'ALL' (case-insensitive) as no filter
+        if exchange_filter and exchange_filter.upper() != 'ALL':
             query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
         query += "\n            ORDER BY SYMBOL"
         if max_symbols:
@@ -102,79 +103,91 @@ class WatermarkETLManager:
     
     def bulk_update_watermarks(self, successful_symbols: List[str], failed_symbols: List[str]):
         """
-        Bulk update watermarks for successful and failed symbols.
+        Bulk update watermarks for successful and failed symbols using a temporary table and batch update.
         """
         if not self.connection:
             raise RuntimeError("❌ No active Snowflake connection. Call connect() first.")
-        
+
+        import re
+        import pandas as pd
         cursor = self.connection.cursor()
-        
-        if successful_symbols:
-            logger.info(f"📝 Bulk updating {len(successful_symbols)} successful watermarks...")
-            for symbol in successful_symbols:
-                # Find the corresponding S3 file for this symbol
-                s3_prefix = os.environ.get('S3_INSIDER_TRANSACTIONS_PREFIX', 'insider_transactions/')
-                s3_bucket = os.environ.get('S3_BUCKET', 'fin-trade-craft-landing')
-                s3_client = boto3.client('s3')
-                # Find the latest file for this symbol
-                response = s3_client.list_objects_v2(Bucket=s3_bucket, Prefix=f"{s3_prefix}{symbol}_")
-                files = response.get('Contents', [])
-                if not files:
-                    logger.warning(f"No S3 files found for symbol {symbol}, skipping fiscal date update.")
-                    continue
-                # Get the most recent file for this symbol
-                latest_file = max(files, key=lambda x: x['LastModified'])['Key']
-                obj = s3_client.get_object(Bucket=s3_bucket, Key=latest_file)
-                csv_data = obj['Body'].read().decode('utf-8')
-                reader = csv.DictReader(StringIO(csv_data))
-                import re
-                # Clean and filter dates
-                cleaned_dates = []
+        s3_prefix = os.environ.get('S3_INSIDER_TRANSACTIONS_PREFIX', 'insider_transactions/')
+        s3_bucket = os.environ.get('S3_BUCKET', 'fin-trade-craft-landing')
+        s3_client = boto3.client('s3')
 
-                for d in [row['transaction_date'] for row in reader if row.get('transaction_date')]:
-                    d = d.strip()
-                    d = re.sub(r'<.*?>', '', d)  # Remove XML/HTML tags
-                    # Truncate at first non-digit/non-hyphen after YYYY-MM-DD
-                    match = re.match(r'^(\d{4}-\d{2}-\d{2})', d)
-                    if match:
-                        d_clean = match.group(1)
-                        cleaned_dates.append(d_clean)
-                        if d != d_clean:
-                            logger.info(f"Truncated timestamp/timezone from date: {d} -> {d_clean}")
-                    else:
-                        logger.warning(f"Skipping malformed date: {d}")
+        # Prepare data for successful symbols
+        update_rows = []
+        for symbol in successful_symbols:
+            response = s3_client.list_objects_v2(Bucket=s3_bucket, Prefix=f"{s3_prefix}{symbol}_")
+            files = response.get('Contents', [])
+            if not files:
+                logger.warning(f"No S3 files found for symbol {symbol}, skipping fiscal date update.")
+                continue
+            latest_file = max(files, key=lambda x: x['LastModified'])['Key']
+            obj = s3_client.get_object(Bucket=s3_bucket, Key=latest_file)
+            csv_data = obj['Body'].read().decode('utf-8')
+            reader = csv.DictReader(StringIO(csv_data))
+            cleaned_dates = []
+            for d in [row['transaction_date'] for row in reader if row.get('transaction_date')]:
+                d = d.strip()
+                d = re.sub(r'<.*?>', '', d)
+                match = re.match(r'^(\d{4}-\d{2}-\d{2})', d)
+                if match:
+                    d_clean = match.group(1)
+                    cleaned_dates.append(d_clean)
+                else:
+                    logger.warning(f"Skipping malformed date: {d}")
+            if not cleaned_dates:
+                logger.warning(f"No valid transaction_date found in S3 file for symbol {symbol}, skipping fiscal date update.")
+                continue
+            min_date_fmt = min(cleaned_dates)
+            max_date_fmt = max(cleaned_dates)
+            update_rows.append((symbol, min_date_fmt, max_date_fmt))
 
-                if not cleaned_dates:
-                    logger.warning(f"No valid transaction_date found in S3 file for symbol {symbol}, skipping fiscal date update.")
-                    continue
+        if update_rows:
+            # Create temp table
+            cursor.execute("""
+                CREATE TEMPORARY TABLE WATERMARK_UPDATES (
+                    SYMBOL VARCHAR(20),
+                    FIRST_DATE DATE,
+                    LAST_DATE DATE
+                )
+            """)
+            # Insert all rows
+            values_clause = ',\n'.join([
+                f"('{symbol}', TO_DATE('{first_date}', 'YYYY-MM-DD'), TO_DATE('{last_date}', 'YYYY-MM-DD'))"
+                for symbol, first_date, last_date in update_rows
+            ])
+            cursor.execute(f"""
+                INSERT INTO WATERMARK_UPDATES (SYMBOL, FIRST_DATE, LAST_DATE)
+                VALUES {values_clause}
+            """)
+            # Batch update
+            cursor.execute(f"""
+                UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS target
+                SET 
+                    LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(),
+                    CONSECUTIVE_FAILURES = 0,
+                    UPDATED_AT = CURRENT_TIMESTAMP(),
+                    FIRST_FISCAL_DATE = COALESCE(target.FIRST_FISCAL_DATE, source.FIRST_DATE),
+                    LAST_FISCAL_DATE = source.LAST_DATE
+                FROM WATERMARK_UPDATES source
+                WHERE target.TABLE_NAME = '{self.table_name}'
+                  AND target.SYMBOL = source.SYMBOL
+            """)
+            logger.info(f"✅ Bulk updated {len(update_rows)} successful watermarks (with fiscal dates)")
 
-                min_date_fmt = min(cleaned_dates)
-                max_date_fmt = max(cleaned_dates)
-                logger.info(f"Updating {symbol}: FIRST_FISCAL_DATE={min_date_fmt}, LAST_FISCAL_DATE={max_date_fmt}")
-                cursor.execute(f"""
-                    UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-                    SET 
-                        LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(),
-                        CONSECUTIVE_FAILURES = 0,
-                        UPDATED_AT = CURRENT_TIMESTAMP(),
-                        FIRST_FISCAL_DATE = '{min_date_fmt}',
-                        LAST_FISCAL_DATE = '{max_date_fmt}'
-                    WHERE TABLE_NAME = '{self.table_name}'
-                      AND SYMBOL = '{symbol}'
-                """)
-            logger.info(f"✅ Bulk updated {len(successful_symbols)} successful watermarks (with fiscal dates)")
-
-        # Increment CONSECUTIVE_FAILURES for failed symbols
+        # Failed symbols: batch update
         if failed_symbols:
-            logger.info(f"❌ Updating {len(failed_symbols)} failed symbols (incrementing CONSECUTIVE_FAILURES)...")
-            for symbol in failed_symbols:
-                cursor.execute(f"""
-                    UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-                    SET CONSECUTIVE_FAILURES = COALESCE(CONSECUTIVE_FAILURES, 0) + 1,
-                        UPDATED_AT = CURRENT_TIMESTAMP()
-                    WHERE TABLE_NAME = '{self.table_name}'
-                      AND SYMBOL = '{symbol}'
-                """)
+            symbols_list = ", ".join([f"'{s}'" for s in failed_symbols])
+            cursor.execute(f"""
+                UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+                SET CONSECUTIVE_FAILURES = COALESCE(CONSECUTIVE_FAILURES, 0) + 1,
+                    UPDATED_AT = CURRENT_TIMESTAMP()
+                WHERE TABLE_NAME = '{self.table_name}'
+                  AND SYMBOL IN ({symbols_list})
+            """)
+            logger.info(f"❌ Bulk updated {len(failed_symbols)} failed watermarks (incrementing CONSECUTIVE_FAILURES)")
         cursor.close()
 
 
