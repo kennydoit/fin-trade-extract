@@ -89,11 +89,6 @@ def upload_json_to_s3(symbol, data, s3_client, bucket, prefix):
     )
     print(f"Uploaded {symbol} ETF profile to s3://{bucket}/{key}")
 
-def update_watermark(conn, symbol):
-    # Bulk update: set LAST_SUCCESSFUL_RUN and CONSECUTIVE_FAILURES for all processed symbols
-    pass
-
-
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='ETF Profile ETL')
