@@ -111,7 +111,10 @@ def main():
             keys_to_delete.append({'Key': obj['Key']})
     if keys_to_delete:
         print(f"Deleting {len(keys_to_delete)} objects from S3 prefix {s3_prefix}")
-        s3_client.delete_objects(Bucket=s3_bucket, Delete={'Objects': keys_to_delete})
+        # Delete in batches of 1000
+        for i in range(0, len(keys_to_delete), 1000):
+            batch = keys_to_delete[i:i+1000]
+            s3_client.delete_objects(Bucket=s3_bucket, Delete={'Objects': batch})
     else:
         print("No existing objects to delete in S3 prefix.")
     symbols = get_eligible_etf_symbols(conn, args.max_symbols)
