@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       exchange_filter:
-        description: 'Exchange to process (NYSE, NASDAQ, or leave blank for all)'
+        description: 'Exchange to process (NYSE, NASDAQ, AMEX, or ALL)'
         required: false
         type: choice
         options:
-          - ''
+          - ALL
           - NYSE
           - NASDAQ
           - AMEX
-        default: ''
+        default: ALL
       max_symbols:
         description: 'Maximum number of symbols to process (blank = all eligible symbols)'
         required: false
@@ -70,12 +70,12 @@ jobs:
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
-          EXCHANGE_FILTER: ${{ inputs.exchange_filter }}
+          EXCHANGE_FILTER: ${{ inputs.exchange_filter || 'ALL' }}
           MAX_SYMBOLS: ${{ inputs.max_symbols }}
           BATCH_SIZE: ${{ inputs.batch_size || '50' }}
         run: |
           echo "🚀 Starting watermark-based earnings call transcript ETL..."
-          if [ -n "$EXCHANGE_FILTER" ]; then
+          if [ "$EXCHANGE_FILTER" != "ALL" ]; then
             echo "🏢 Exchange filter: $EXCHANGE_FILTER"
           else
             echo "🌐 Processing: All exchanges"
