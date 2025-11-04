@@ -3,7 +3,7 @@ name: Economic Indicators ETL
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 22 * * *'  # Every day at 10pm UTC
+    - cron: '0 0 * * *'  # Every day at 12:00am UTC
 
 jobs:
   economic-indicators-etl:

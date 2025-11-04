@@ -2,7 +2,7 @@ name: FRED Commodities ETL
 
 on:
   schedule:
-    - cron: '15 22 * * *'  # Run daily at 10:15pm UTC
+    - cron: '15 0 * * *'  # Run daily at 12:15am UTC
   workflow_dispatch:
 
 jobs:
