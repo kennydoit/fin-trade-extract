@@ -3,10 +3,15 @@ on:
   workflow_dispatch:
     inputs:
       exchange_filter:
-        description: 'Exchange to process (NYSE, NASDAQ, AMEX, or leave blank for all)'
+        description: 'Exchange to process (NYSE, NASDAQ, AMEX, or ALL for all)'
         required: false
-        default: ''
-        type: string
+        type: choice
+        options:
+          - ALL
+          - NYSE
+          - NASDAQ
+          - AMEX
+        default: ALL
       max_symbols:
         description: 'Maximum number of symbols to process (blank = all eligible symbols)'
         required: false
@@ -69,7 +74,7 @@ jobs:
           BATCH_SIZE: ${{ inputs.batch_size }}
         run: |
           echo "🚀 Starting watermark-based time series ETL..."
-          if [ -n "$EXCHANGE_FILTER" ]; then
+          if [ "$EXCHANGE_FILTER" != "ALL" ]; then
             echo "🏢 Exchange filter: $EXCHANGE_FILTER"
           else
             echo "🌐 Processing: All exchanges"

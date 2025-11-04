@@ -89,7 +89,8 @@ class WatermarkETLManager:
                    OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
             """
         
-        if exchange_filter:
+        # Treat 'ALL' (case-insensitive) as no filter
+        if exchange_filter and exchange_filter.upper() != 'ALL':
             query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
         
         query += "\n            ORDER BY SYMBOL"
