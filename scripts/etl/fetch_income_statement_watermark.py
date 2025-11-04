@@ -492,35 +492,34 @@ def main():
         logger.error("❌ ALPHAVANTAGE_API_KEY environment variable not set")
         sys.exit(1)
     
-    # Snowflake configuration
-        # Load private key for key pair authentication
-        key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH", "snowflake_rsa_key.der")
-        if not os.path.isfile(key_path):
-            logger.error(f"❌ Private key file not found: {key_path}")
-            logger.error(f"Current working directory: {os.getcwd()}")
-            logger.error("Make sure the key is decoded and present before running this script.")
-            sys.exit(1)
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.backends import default_backend
-        with open(key_path, "rb") as key_file:
-            private_key = serialization.load_der_private_key(
-                key_file.read(),
-                password=None,
-                backend=default_backend()
-            )
-        pk_bytes = private_key.private_bytes(
-            encoding=serialization.Encoding.DER,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
+    # Load private key for key pair authentication
+    key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH", "snowflake_rsa_key.der")
+    if not os.path.isfile(key_path):
+        logger.error(f"❌ Private key file not found: {key_path}")
+        logger.error(f"Current working directory: {os.getcwd()}")
+        logger.error("Make sure the key is decoded and present before running this script.")
+        sys.exit(1)
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.backends import default_backend
+    with open(key_path, "rb") as key_file:
+        private_key = serialization.load_der_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
         )
-        snowflake_config = {
-            'account': os.environ.get('SNOWFLAKE_ACCOUNT'),
-            'user': os.environ.get('SNOWFLAKE_USER'),
-            'private_key': pk_bytes,
-            'warehouse': os.environ.get('SNOWFLAKE_WAREHOUSE'),
-            'database': os.environ.get('SNOWFLAKE_DATABASE'),
-            'schema': os.environ.get('SNOWFLAKE_SCHEMA')
-        }
+    pk_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    snowflake_config = {
+        'account': os.environ.get('SNOWFLAKE_ACCOUNT'),
+        'user': os.environ.get('SNOWFLAKE_USER'),
+        'private_key': pk_bytes,
+        'warehouse': os.environ.get('SNOWFLAKE_WAREHOUSE'),
+        'database': os.environ.get('SNOWFLAKE_DATABASE'),
+        'schema': os.environ.get('SNOWFLAKE_SCHEMA')
+    }
     
     # Initialize managers
     watermark_manager = WatermarkETLManager(snowflake_config)
