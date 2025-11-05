@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       exchange_filter:
-        description: 'Exchange to process (NYSE, NASDAQ, AMEX, or ALL for all)'
+        description: 'Exchange to process (NYSE, NASDAQ, AMEX, or ALL for all, ETF_AND_ALL_OTHER for ETF and everything except NASDAQ and NYSE)'
         required: false
         type: choice
         options:
@@ -11,6 +11,7 @@ on:
           - NYSE
           - NASDAQ
           - AMEX
+          - ETF_AND_ALL_OTHER
         default: ALL
       max_symbols:
         description: 'Maximum number of symbols to process (blank = all eligible symbols)'
