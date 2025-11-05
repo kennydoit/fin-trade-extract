@@ -87,8 +87,15 @@ class WatermarkETLManager:
             """
         
         # Treat 'ALL' (case-insensitive) as no filter
-        if exchange_filter and exchange_filter.upper() != 'ALL':
-            query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
+        # Support ETF_AND_ALL_OTHER: exclude NASDAQ and NYSE
+        if exchange_filter:
+            ef = exchange_filter.upper()
+            if ef == 'ALL':
+                pass  # No filter
+            elif ef == 'ETF_AND_ALL_OTHER':
+                query += "\n              AND UPPER(EXCHANGE) NOT IN ('NASDAQ', 'NYSE')"
+            else:
+                query += f"\n              AND UPPER(EXCHANGE) = '{ef}'"
         
         query += "\n            ORDER BY SYMBOL"
         
