@@ -29,7 +29,7 @@ on:
   schedule:
     # Quarterly on the 1st of Jan, Apr, Jul, Oct at 6:00 AM UTC
     # Company overview changes infrequently, quarterly refresh is sufficient
-    - cron: '0 6 1 1,4,7,10 *'
+    # - cron: '0 6 1 1,4,7,10 *'
 
 jobs:
   watermark-company-overview-etl:

@@ -2,7 +2,7 @@ name: Time Series ETL - ETF and All Other
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 3 * * *'  # Example: daily at 3:00am UTC
+    - cron: '0 3 * * 1'  # Example: every Monday at 3:00am UTC
 jobs:
   time-series-etf-and-all-other-etl:
     runs-on: ubuntu-22.04
