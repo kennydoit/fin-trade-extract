@@ -31,10 +31,10 @@ on:
         required: false
         type: choice
         options:
-          - YES
+          - "YES"
           - SUS
           - DEL
-        default: YES
+        default: "YES"
 
 jobs:
   time-series-watermark-etl:
