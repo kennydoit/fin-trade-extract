@@ -26,6 +26,15 @@ on:
         required: false
         default: 50
         type: number
+      api_eligible:
+        description: 'API_ELIGIBLE status to target (YES, SUS, DEL)'
+        required: false
+        type: choice
+        options:
+          - YES
+          - SUS
+          - DEL
+        default: YES
 
 jobs:
   time-series-watermark-etl:
@@ -37,6 +46,7 @@ jobs:
     env:
       PYTHONUNBUFFERED: '1'
       AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+      API_ELIGIBLE: ${{ inputs.api_eligible }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

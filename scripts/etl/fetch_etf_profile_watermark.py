@@ -138,6 +138,18 @@ def main():
     for idx, symbol in enumerate(symbols, 1):
         print(f"[{idx}] {symbol}")
         data = fetch_etf_profile(symbol, api_key)
+        # Check for delisted status in ETF profile data
+        if data and (data.get('status', '').lower() == 'delisted' or data.get('delisted', False)):
+            print(f"{symbol} is delisted. Marking API_ELIGIBLE as 'DEL'.")
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+                SET API_ELIGIBLE = 'DEL'
+                WHERE TABLE_NAME = 'ETF_PROFILE' AND SYMBOL = %s
+            """, (symbol,))
+            conn.commit()
+            cur.close()
+            continue
         if data:
             upload_json_to_s3(symbol, data, s3_client, s3_bucket, s3_prefix)
             processed.append(symbol)

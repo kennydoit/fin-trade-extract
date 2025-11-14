@@ -47,7 +47,8 @@ class WatermarkETLManager:
     def get_symbols_to_process(self, exchange_filter: Optional[str] = None,
                                max_symbols: Optional[int] = None,
                                staleness_days: int = 5,
-                               skip_recent_hours: Optional[int] = None) -> List[Dict]:
+                               skip_recent_hours: Optional[int] = None,
+                               api_eligible: str = 'YES') -> List[Dict]:
         """
         Get symbols to process from ETL_WATERMARKS table.
         
@@ -76,7 +77,7 @@ class WatermarkETLManager:
                 CONSECUTIVE_FAILURES
             FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
             WHERE TABLE_NAME = '{self.table_name}'
-              AND API_ELIGIBLE = 'YES'
+              AND API_ELIGIBLE = '{api_eligible}'
         """
         
         # Skip recently processed symbols if requested
@@ -530,12 +531,14 @@ def main():
     logger.info("=" * 60)
     
     watermark_manager = WatermarkETLManager(snowflake_config)
+    api_eligible = os.environ.get('API_ELIGIBLE', 'YES')
     try:
         symbols_to_process = watermark_manager.get_symbols_to_process(
             exchange_filter=exchange_filter,
             max_symbols=max_symbols,
             staleness_days=staleness_days,
-            skip_recent_hours=skip_recent_hours
+            skip_recent_hours=skip_recent_hours,
+            api_eligible=api_eligible
         )
     finally:
         # CRITICAL: Close Snowflake connection immediately after getting symbols
