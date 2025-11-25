@@ -48,4 +48,18 @@ jobs:
           EXCHANGE_FILTER: NYSE
         run: |
           python scripts/etl/fetch_time_series_watermark.py
-      # ...other steps as needed...
+
+      - name: Load time series data into Snowflake
+        working-directory: ${{ github.workspace }}
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+        run: |
+          echo "🗄️ Loading time series data into Snowflake..."
+          python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_time_series_from_s3.sql
+
+      - name: Clean up private key
+        run: rm -f snowflake_rsa_key.der
