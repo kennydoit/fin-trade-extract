@@ -1,6 +1,12 @@
+#!/usr/bin/env python3
+"""
+Listing Status ETL
+Fetches all active and delisted stock listings from Alpha Vantage API.
+No watermark needed - pulls complete datasets.
+"""
+
 import os
 import sys
-import csv
 import requests
 import boto3
 import time
