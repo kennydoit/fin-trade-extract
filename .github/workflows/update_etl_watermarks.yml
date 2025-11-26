@@ -2,12 +2,6 @@ name: Update ETL Watermarks
 
 on:
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Dry run mode (uses ETL_WATERMARKS_TEST table)'
-        required: false
-        type: boolean
-        default: true
   schedule:
     # Run after listing status ETL (Sundays at 6PM UTC, 1 hour after listing status at 5PM)
     - cron: '0 18 * * 0'
@@ -49,7 +43,6 @@ jobs:
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
         run: |
           echo "🔄 Updating ETL watermarks with new symbols from LISTING_STATUS..."
-          echo "📋 Mode: ${{ inputs.dry_run == true && 'DRY RUN (using ETL_WATERMARKS_TEST)' || 'PRODUCTION (using ETL_WATERMARKS)' }}"
           echo ""
           echo "📍 Process:"
           echo "  1. Identify symbols in LISTING_STATUS not yet in ETL_WATERMARKS"
