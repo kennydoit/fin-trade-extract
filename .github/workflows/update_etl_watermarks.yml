@@ -1,0 +1,85 @@
+name: Update ETL Watermarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run mode (uses ETL_WATERMARKS_TEST table)'
+        required: false
+        type: boolean
+        default: true
+  schedule:
+    # Run after listing status ETL (Sundays at 6PM UTC, 1 hour after listing status at 5PM)
+    - cron: '0 18 * * 0'
+
+jobs:
+  update-watermarks:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Decode Snowflake private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_DER_B64 }}" | base64 -d > snowflake_rsa_key.der
+        working-directory: ${{ github.workspace }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install snowflake-connector-python cryptography
+
+      - name: Update ETL watermarks with new symbols
+        working-directory: ${{ github.workspace }}
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+        run: |
+          echo "🔄 Updating ETL watermarks with new symbols from LISTING_STATUS..."
+          echo "📋 Mode: ${{ inputs.dry_run == true && 'DRY RUN (using ETL_WATERMARKS_TEST)' || 'PRODUCTION (using ETL_WATERMARKS)' }}"
+          echo ""
+          echo "📍 Process:"
+          echo "  1. Identify symbols in LISTING_STATUS not yet in ETL_WATERMARKS"
+          echo "  2. Cross join with all existing table names"
+          echo "  3. Set API_ELIGIBLE based on asset type and status rules"
+          echo "  4. Insert new watermark records"
+          echo ""
+          python scripts/github_actions/snowflake_run_sql_file.py snowflake/runbooks/load_new_symbol_watermarks.sql
+
+      - name: Clean up private key
+        if: always()
+        run: rm -f snowflake_rsa_key.der
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "📊 ETL WATERMARKS UPDATE SUMMARY"
+          echo "================================"
+          echo "✅ New symbols from LISTING_STATUS have been added to all relevant watermark tables"
+          echo ""
+          echo "📋 API_ELIGIBLE Logic Applied:"
+          echo "  - ETF_PROFILE: ETFs only"
+          echo "  - EARNINGS_CALL_TRANSCRIPT: Active stocks only"
+          echo "  - TIME_SERIES_DAILY_ADJUSTED: All symbols"
+          echo "  - COMPANY_OVERVIEW: All stocks"
+          echo "  - BALANCE_SHEET: Active stocks only"
+          echo "  - CASH_FLOW: Active stocks only"
+          echo "  - INCOME_STATEMENT: Active stocks only"
+          echo "  - INSIDER_TRANSACTIONS: Active stocks only"
+          echo ""
+          echo "🎯 Next Steps:"
+          echo "  - Run individual data source ETLs to process new symbols"
+          echo "  - Monitor CONSECUTIVE_FAILURES for any issues"
