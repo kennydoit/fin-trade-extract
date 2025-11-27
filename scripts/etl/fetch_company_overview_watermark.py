@@ -46,14 +46,14 @@ class WatermarkETLManager:
         
         Returns list of dicts with symbol information
         """
-        self.connect()
-        
         query = f"""
             SELECT 
                 SYMBOL,
-        Returns list of dicts with symbol information
-        """
-        query = f"""ECUTIVE_FAILURES
+                EXCHANGE,
+                ASSET_TYPE,
+                STATUS,
+                LAST_SUCCESSFUL_RUN,
+                CONSECUTIVE_FAILURES
             FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
             WHERE TABLE_NAME = '{self.table_name}'
               AND API_ELIGIBLE = 'YES'
