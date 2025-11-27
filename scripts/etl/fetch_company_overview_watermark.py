@@ -26,17 +26,10 @@ logger = logging.getLogger(__name__)
 class WatermarkETLManager:
     """Manages ETL processing using the ETL_WATERMARKS table."""
     
-    def __init__(self, snowflake_config: Dict[str, str], table_name: str = 'COMPANY_OVERVIEW'):
-        self.snowflake_config = snowflake_config
+    def __init__(self, snowflake_connection, table_name: str = 'COMPANY_OVERVIEW'):
+        self.connection = snowflake_connection
         self.table_name = table_name
-        self.connection = None
         
-    def connect(self):
-        """Establish Snowflake connection."""
-        if not self.connection:
-            self.connection = snowflake.connector.connect(**self.snowflake_config)
-            logger.info("✅ Connected to Snowflake")
-            
     def close(self):
         """Close Snowflake connection."""
         if self.connection:
@@ -58,11 +51,9 @@ class WatermarkETLManager:
         query = f"""
             SELECT 
                 SYMBOL,
-                EXCHANGE,
-                ASSET_TYPE,
-                STATUS,
-                LAST_SUCCESSFUL_RUN,
-                CONSECUTIVE_FAILURES
+        Returns list of dicts with symbol information
+        """
+        query = f"""ECUTIVE_FAILURES
             FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
             WHERE TABLE_NAME = '{self.table_name}'
               AND API_ELIGIBLE = 'YES'
@@ -375,7 +366,29 @@ def upload_to_s3(data: Dict, s3_client, bucket: str, prefix: str) -> bool:
 
 def main():
     """Main ETL execution."""
-    import argparse
+def get_snowflake_connection():
+    """Create Snowflake connection using private key authentication."""
+    import cryptography.hazmat.primitives.serialization as serialization
+    from cryptography.hazmat.backends import default_backend
+    
+    private_key_path = os.environ.get('SNOWFLAKE_PRIVATE_KEY_PATH', 'snowflake_rsa_key.der')
+    with open(private_key_path, 'rb') as key_file:
+        p_key = key_file.read()
+    
+    private_key = serialization.load_der_private_key(
+        p_key,
+        password=None,
+    s3_prefix = os.environ.get('S3_COMPANY_OVERVIEW_PREFIX', 'company_overview/')
+    max_symbols = args.max_symbols  # Use argparse instead of environment variable
+    
+    # Initialize managers
+    conn = get_snowflake_connection()
+    watermark_manager = WatermarkETLManager(conn)
+        warehouse=os.environ['SNOWFLAKE_WAREHOUSE']
+    )
+
+
+def main():argparse
     parser = argparse.ArgumentParser(description='Company Overview Watermark ETL')
     parser.add_argument('--max-symbols', type=int, default=None, help='Maximum number of symbols to process')
     args = parser.parse_args()
@@ -465,11 +478,11 @@ def main():
                 results['details'].append({
                     'symbol': symbol,
                     'status': 'success'
-                })
-            else:
-                results['failed'] += 1
-                results['details'].append({
-                    'symbol': symbol,
+    logger.info("🔄 STEP 4: Update watermarks for successful extractions")
+    logger.info("=" * 60)
+    
+    conn = get_snowflake_connection()
+    watermark_manager = WatermarkETLManager(conn)ymbol,
                     'status': 'failed'
                 })
         else:
