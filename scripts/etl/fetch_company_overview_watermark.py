@@ -65,8 +65,6 @@ class WatermarkETLManager:
                 EXCHANGE,
                 ASSET_TYPE,
                 STATUS,
-                FIRST_FISCAL_DATE,
-                LAST_FISCAL_DATE,
                 LAST_SUCCESSFUL_RUN,
                 CONSECUTIVE_FAILURES
             FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
@@ -74,13 +72,12 @@ class WatermarkETLManager:
               AND API_ELIGIBLE = 'YES'
         """
         
-        # COMPANY_OVERVIEW-SPECIFIC LOGIC: Only pull if 365 days have passed since LAST_FISCAL_DATE
-        # Company overview data is semi-static (sector, industry, description) and changes infrequently
-        # 365 days = Annual refresh is sufficient for most company profile information
-        # More frequent updates would waste API quota on unchanged data
+        # COMPANY_OVERVIEW-SPECIFIC LOGIC: Only pull if NEVER pulled before (LAST_SUCCESSFUL_RUN IS NULL)
+        # Company overview is semi-static data (sector, industry, description) - no need to refresh
+        # Once pulled, the data is stored and only needs updates in rare cases (handled manually)
+        # This ensures true incremental processing - only fetch new symbols
         query += """
-              AND (LAST_FISCAL_DATE IS NULL 
-                   OR LAST_FISCAL_DATE < DATEADD(day, -365, CURRENT_DATE()))
+              AND LAST_SUCCESSFUL_RUN IS NULL
         """
         
         # Skip recently processed symbols if requested
@@ -98,14 +95,11 @@ class WatermarkETLManager:
         if max_symbols:
             query += f"\n            LIMIT {max_symbols}"
         
+        
         logger.info(f"📊 Querying watermarks for {self.table_name}...")
-        logger.info(f"📅 Company overview logic: Only symbols with LAST_FISCAL_DATE older than 365 days (or NULL)")
-        if exchange_filter:
-            logger.info(f"🏢 Exchange filter: {exchange_filter}")
+        logger.info(f"📅 Company overview logic: Only symbols that have NEVER been pulled (LAST_SUCCESSFUL_RUN IS NULL)")
         if max_symbols:
             logger.info(f"🔒 Symbol limit: {max_symbols}")
-        if skip_recent_hours:
-            logger.info(f"⏭️  Skip recent: {skip_recent_hours} hours")
         
         cursor = self.connection.cursor()
         cursor.execute(query)
@@ -129,10 +123,11 @@ class WatermarkETLManager:
     
     def bulk_update_watermarks(self, successful_updates: List[Dict], failed_symbols: List[str]):
         """
-        Bulk update watermarks using a single MERGE statement (MUCH faster than individual UPDATEs).
+        Bulk update watermarks using a single UPDATE statement.
+        For company overview, we only update LAST_SUCCESSFUL_RUN (no fiscal dates).
         
         Args:
-            successful_updates: List of dicts with {symbol, first_date, last_date}
+            successful_updates: List of dicts with {symbol}
             failed_symbols: List of symbols that failed processing
         """
         if not self.connection:
@@ -140,55 +135,30 @@ class WatermarkETLManager:
         
         cursor = self.connection.cursor()
         
-        # Build VALUES clause for successful updates
+        # Update successful symbols
         if successful_updates:
             logger.info(f"📝 Bulk updating {len(successful_updates)} successful watermarks...")
             
-            # Create temporary table with updates
-            cursor.execute("""
-                CREATE TEMPORARY TABLE WATERMARK_UPDATES (
-                    SYMBOL VARCHAR(20),
-                    FIRST_DATE DATE,
-                    LAST_DATE DATE
-                )
-            """)
+            # Extract symbol list
+            symbols_list = "', '".join([u['symbol'] for u in successful_updates])
             
-            # Build INSERT statement with all values
-            values_list = []
-            for update in successful_updates:
-                values_list.append(
-                    f"('{update['symbol']}', "
-                    f"TO_DATE('{update['first_date']}', 'YYYY-MM-DD'), "
-                    f"TO_DATE('{update['last_date']}', 'YYYY-MM-DD'))"
-                )
-            
-            # Insert all updates at once (batch insert is fast)
-            values_clause = ',\n'.join(values_list)
+            # Single UPDATE to mark all symbols as successfully processed
             cursor.execute(f"""
-                INSERT INTO WATERMARK_UPDATES (SYMBOL, FIRST_DATE, LAST_DATE)
-                VALUES {values_clause}
-            """)
-            
-            # Single MERGE to update all watermarks at once
-            cursor.execute(f"""
-                MERGE INTO FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS target
-                USING WATERMARK_UPDATES source
-                ON target.TABLE_NAME = '{self.table_name}'
-                   AND target.SYMBOL = source.SYMBOL
-                WHEN MATCHED THEN UPDATE SET
-                    FIRST_FISCAL_DATE = COALESCE(target.FIRST_FISCAL_DATE, source.FIRST_DATE),
-                    LAST_FISCAL_DATE = source.LAST_DATE,
+                UPDATE FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+                SET 
                     LAST_SUCCESSFUL_RUN = CURRENT_TIMESTAMP(),
                     CONSECUTIVE_FAILURES = 0,
                     API_ELIGIBLE = CASE 
-                        WHEN target.DELISTING_DATE IS NOT NULL AND target.DELISTING_DATE <= CURRENT_DATE() 
+                        WHEN DELISTING_DATE IS NOT NULL AND DELISTING_DATE <= CURRENT_DATE() 
                         THEN 'DEL'
-                        ELSE target.API_ELIGIBLE 
+                        ELSE API_ELIGIBLE 
                     END,
                     UPDATED_AT = CURRENT_TIMESTAMP()
+                WHERE TABLE_NAME = '{self.table_name}'
+                  AND SYMBOL IN ('{symbols_list}')
             """)
             
-            logger.info(f"✅ Bulk updated {len(successful_updates)} successful watermarks in single MERGE")
+            logger.info(f"✅ Bulk updated {len(successful_updates)} successful watermarks")
         
         # Handle failed symbols (much smaller batch, can use simple UPDATE with IN clause)
         if failed_symbols:
@@ -362,9 +332,7 @@ def fetch_company_overview(symbol: str, api_key: str) -> Optional[Dict]:
         return {
             'symbol': symbol,
             'data': data,
-            'latest_quarter': latest_quarter,
-            'first_date': latest_quarter,  # For company overview, first=last (single snapshot)
-            'last_date': latest_quarter
+            'latest_quarter': latest_quarter
         }
         
     except requests.exceptions.RequestException as e:
@@ -505,9 +473,7 @@ def main():
             if upload_to_s3(data, s3_client, s3_bucket, s3_prefix):
                 # Track for bulk watermark update (don't update one-by-one)
                 results['successful_updates'].append({
-                    'symbol': symbol,
-                    'first_date': data['first_date'],
-                    'last_date': data['last_date']
+                    'symbol': symbol
                 })
                 results['successful'] += 1
                 results['details'].append({
