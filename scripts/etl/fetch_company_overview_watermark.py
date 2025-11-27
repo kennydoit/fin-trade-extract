@@ -421,16 +421,18 @@ def upload_to_s3(data: Dict, s3_client, bucket: str, prefix: str) -> bool:
 
 def main():
     """Main ETL execution."""
+    import argparse
+    parser = argparse.ArgumentParser(description='Company Overview Watermark ETL')
+    parser.add_argument('--max-symbols', type=int, default=None, help='Maximum number of symbols to process')
+    args = parser.parse_args()
+    
     logger.info("🚀 Starting Watermark-Based Company Overview ETL")
     
     # Get configuration from environment
     api_key = os.environ['ALPHAVANTAGE_API_KEY']
     s3_bucket = os.environ.get('S3_BUCKET', 'fin-trade-craft-landing')
     s3_prefix = os.environ.get('S3_COMPANY_OVERVIEW_PREFIX', 'company_overview/')
-    exchange_filter = os.environ.get('EXCHANGE_FILTER')  # NYSE, NASDAQ, or None for all
-    max_symbols = int(os.environ['MAX_SYMBOLS']) if os.environ.get('MAX_SYMBOLS') else None
-    skip_recent_hours = int(os.environ['SKIP_RECENT_HOURS']) if os.environ.get('SKIP_RECENT_HOURS') else None
-    batch_size = int(os.environ.get('BATCH_SIZE', '50'))
+    max_symbols = args.max_symbols  # Use argparse instead of environment variable
     
     # Snowflake configuration
     snowflake_config = {
@@ -461,9 +463,7 @@ def main():
     logger.info("=" * 60)
     try:
         symbols_to_process = watermark_manager.get_symbols_to_process(
-            exchange_filter=exchange_filter,
-            max_symbols=max_symbols,
-            skip_recent_hours=skip_recent_hours
+            max_symbols=max_symbols
         )
     finally:
         # CRITICAL: Close Snowflake connection immediately after getting symbols
