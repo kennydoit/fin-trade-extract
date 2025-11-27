@@ -44,16 +44,12 @@ class WatermarkETLManager:
             self.connection = None
             logger.info("🔒 Snowflake connection closed")
     
-    def get_symbols_to_process(self, exchange_filter: Optional[str] = None,
-                               max_symbols: Optional[int] = None,
-                               skip_recent_hours: Optional[int] = None) -> List[Dict]:
+    def get_symbols_to_process(self, max_symbols: Optional[int] = None) -> List[Dict]:
         """
         Get symbols to process from ETL_WATERMARKS table.
         
         Args:
-            exchange_filter: Filter by exchange (NYSE, NASDAQ, etc.)
             max_symbols: Maximum number of symbols to return
-            skip_recent_hours: Skip symbols processed within this many hours (for incremental runs)
         
         Returns list of dicts with symbol information
         """
@@ -79,16 +75,6 @@ class WatermarkETLManager:
         query += """
               AND LAST_SUCCESSFUL_RUN IS NULL
         """
-        
-        # Skip recently processed symbols if requested
-        if skip_recent_hours:
-            query += f"""
-              AND (LAST_SUCCESSFUL_RUN IS NULL 
-                   OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
-            """
-        
-        if exchange_filter:
-            query += f"\n              AND UPPER(EXCHANGE) = '{exchange_filter.upper()}'"
         
         query += "\n            ORDER BY SYMBOL"
         
