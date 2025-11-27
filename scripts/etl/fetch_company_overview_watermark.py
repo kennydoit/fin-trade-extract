@@ -495,11 +495,11 @@ def main():
                 results['details'].append({
                     'symbol': symbol,
                     'status': 'success'
-    logger.info("🔄 STEP 4: Update watermarks for successful extractions")
-    logger.info("=" * 60)
-    
-    conn = get_snowflake_connection()
-    watermark_manager = WatermarkETLManager(conn)ymbol,
+                })
+            else:
+                results['failed'] += 1
+                results['details'].append({
+                    'symbol': symbol,
                     'status': 'failed'
                 })
         else:
@@ -520,8 +520,8 @@ def main():
     logger.info("🔄 STEP 4: Update watermarks for successful extractions")
     logger.info("=" * 60)
     
-    watermark_manager = WatermarkETLManager(snowflake_config)
-    watermark_manager.connect()
+    conn = get_snowflake_connection()
+    watermark_manager = WatermarkETLManager(conn)
     
     try:
         # Bulk update all watermarks in a single MERGE statement (100x faster!)
