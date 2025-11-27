@@ -343,7 +343,8 @@ def upload_to_s3(data: Dict, s3_client, bucket: str, prefix: str) -> bool:
                      'Week52High', 'Week52Low', 'Day50MovingAverage', 'Day200MovingAverage',
                      'SharesOutstanding', 'DividendDate', 'ExDividendDate']
         
-        writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames, extrasaction='ignore')
+        writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames, extrasaction='ignore', 
+                               quoting=csv.QUOTE_ALL, escapechar='\\')
         writer.writeheader()
         
         # Write single row with all company overview data
