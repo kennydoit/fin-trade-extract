@@ -299,7 +299,7 @@ def fetch_company_overview(symbol: str, api_key: str) -> Optional[Dict]:
         # Get LatestQuarter for watermark tracking (this is the most recent fiscal data point)
         latest_quarter = data.get('LatestQuarter')
         
-        if not latest_quarter:
+        if not latest_quarter or latest_quarter == 'None':
             # Use current date as fallback if LatestQuarter not provided
             latest_quarter = datetime.now().strftime('%Y-%m-%d')
             logger.warning(f"⚠️  No LatestQuarter for {symbol}, using current date")

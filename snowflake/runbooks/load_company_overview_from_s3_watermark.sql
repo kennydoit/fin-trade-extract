@@ -209,7 +209,10 @@ FROM (
         $1:Industry::VARCHAR(200) as Industry,
         $1:Address::TEXT as Address,
         $1:FiscalYearEnd::VARCHAR(50) as FiscalYearEnd,
-        TRY_TO_DATE($1:LatestQuarter::VARCHAR, 'YYYY-MM-DD') as LatestQuarter,
+        CASE 
+            WHEN $1:LatestQuarter::VARCHAR IN ('None', 'null', '') THEN NULL
+            ELSE TRY_TO_DATE($1:LatestQuarter::VARCHAR, 'YYYY-MM-DD')
+        END as LatestQuarter,
         TRY_TO_NUMBER($1:MarketCapitalization::VARCHAR, 20, 0) as MarketCapitalization,
         TRY_TO_NUMBER($1:EBITDA::VARCHAR, 20, 0) as EBITDA,
         TRY_TO_NUMBER($1:PERatio::VARCHAR, 10, 2) as PERatio,
@@ -241,8 +244,14 @@ FROM (
         TRY_TO_NUMBER($1:"50DayMovingAverage"::VARCHAR, 10, 2) as Day50MovingAverage,
         TRY_TO_NUMBER($1:"200DayMovingAverage"::VARCHAR, 10, 2) as Day200MovingAverage,
         TRY_TO_NUMBER($1:SharesOutstanding::VARCHAR, 20, 0) as SharesOutstanding,
-        TRY_TO_DATE($1:DividendDate::VARCHAR, 'YYYY-MM-DD') as DividendDate,
-        TRY_TO_DATE($1:ExDividendDate::VARCHAR, 'YYYY-MM-DD') as ExDividendDate,
+        CASE 
+            WHEN $1:DividendDate::VARCHAR IN ('None', 'null', '') THEN NULL
+            ELSE TRY_TO_DATE($1:DividendDate::VARCHAR, 'YYYY-MM-DD')
+        END as DividendDate,
+        CASE 
+            WHEN $1:ExDividendDate::VARCHAR IN ('None', 'null', '') THEN NULL
+            ELSE TRY_TO_DATE($1:ExDividendDate::VARCHAR, 'YYYY-MM-DD')
+        END as ExDividendDate,
         METADATA$FILENAME as source_filename
     FROM @COMPANY_OVERVIEW_STAGE
 )
