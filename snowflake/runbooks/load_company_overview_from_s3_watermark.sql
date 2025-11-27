@@ -93,7 +93,6 @@ CLUSTER BY (SYMBOL, SECTOR);
 -- 4) Create staging table (transient for performance)
 CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING (
     Symbol VARCHAR(20),
-    symbol_id NUMBER(38,0),
     AssetType VARCHAR(50),
     Name VARCHAR(500),
     Description TEXT,
@@ -277,7 +276,7 @@ FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
 MERGE INTO FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW AS target
 USING (
     SELECT 
-        staging.symbol_id,
+        ls.SYMBOL_ID,
         staging.Symbol,
         staging.AssetType,
         staging.Name,
@@ -328,13 +327,14 @@ USING (
         staging.ExDividendDate
         
     FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING staging
+    LEFT JOIN FIN_TRADE_EXTRACT.RAW.LISTING_STATUS ls 
+        ON staging.Symbol = ls.SYMBOL
     WHERE staging.Symbol IS NOT NULL
-      AND staging.symbol_id IS NOT NULL
 ) AS source
 ON target.SYMBOL = source.Symbol
 WHEN MATCHED THEN
     UPDATE SET
-        SYMBOL_ID = source.symbol_id,
+        SYMBOL_ID = source.SYMBOL_ID,
         ASSET_TYPE = source.AssetType,
         NAME = source.Name,
         DESCRIPTION = source.Description,
@@ -400,7 +400,7 @@ WHEN NOT MATCHED THEN
         EX_DIVIDEND_DATE, LOAD_DATE
     )
     VALUES (
-        source.symbol_id, source.Symbol, source.AssetType, source.Name, source.Description,
+        source.SYMBOL_ID, source.Symbol, source.AssetType, source.Name, source.Description,
         source.CIK, source.Exchange, source.Currency, source.Country, source.Sector,
         source.Industry, source.Address, source.FiscalYearEnd, source.LatestQuarter,
         source.MarketCapitalization, source.EBITDA, source.PERatio, source.PEGRatio,
