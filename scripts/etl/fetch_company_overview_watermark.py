@@ -378,17 +378,28 @@ def get_snowflake_connection():
     private_key = serialization.load_der_private_key(
         p_key,
         password=None,
-    s3_prefix = os.environ.get('S3_COMPANY_OVERVIEW_PREFIX', 'company_overview/')
-    max_symbols = args.max_symbols  # Use argparse instead of environment variable
+        backend=default_backend()
+    )
     
-    # Initialize managers
-    conn = get_snowflake_connection()
-    watermark_manager = WatermarkETLManager(conn)
+    pkb = private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    
+    return snowflake.connector.connect(
+        account=os.environ['SNOWFLAKE_ACCOUNT'],
+        user=os.environ['SNOWFLAKE_USER'],
+        private_key=pkb,
+        database=os.environ.get('SNOWFLAKE_DATABASE', 'FIN_TRADE_EXTRACT'),
+        schema=os.environ.get('SNOWFLAKE_SCHEMA', 'RAW'),
         warehouse=os.environ['SNOWFLAKE_WAREHOUSE']
     )
 
 
-def main():argparse
+def main():
+    """Main ETL execution."""
+    import argparse
     parser = argparse.ArgumentParser(description='Company Overview Watermark ETL')
     parser.add_argument('--max-symbols', type=int, default=None, help='Maximum number of symbols to process')
     args = parser.parse_args()
@@ -398,6 +409,12 @@ def main():argparse
     # Get configuration from environment
     api_key = os.environ['ALPHAVANTAGE_API_KEY']
     s3_bucket = os.environ.get('S3_BUCKET', 'fin-trade-craft-landing')
+    s3_prefix = os.environ.get('S3_COMPANY_OVERVIEW_PREFIX', 'company_overview/')
+    max_symbols = args.max_symbols  # Use argparse instead of environment variable
+    
+    # Initialize managers
+    conn = get_snowflake_connection()
+    watermark_manager = WatermarkETLManager(conn)
     s3_prefix = os.environ.get('S3_COMPANY_OVERVIEW_PREFIX', 'company_overview/')
     max_symbols = args.max_symbols  # Use argparse instead of environment variable
     
