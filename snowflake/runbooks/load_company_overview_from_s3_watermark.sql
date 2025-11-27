@@ -248,7 +248,30 @@ FROM (
     FROM @COMPANY_OVERVIEW_STAGE
 )
 PATTERN = '.*\.json'
-ON_ERROR = CONTINUE;
+ON_ERROR = CONTINUE
+RETURN_FAILED_ONLY = TRUE;
+
+-- 6) Check for load errors
+SELECT 
+    'Load Results' as check_type,
+    COUNT(*) as row_count,
+    SUM(CASE WHEN STATUS = 'LOADED' THEN 1 ELSE 0 END) as loaded_count,
+    SUM(CASE WHEN STATUS = 'LOAD_FAILED' THEN 1 ELSE 0 END) as failed_count
+FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
+
+-- 7) Show any load errors
+SELECT 
+    FILE,
+    STATUS,
+    ERROR_COUNT,
+    ERROR_LIMIT,
+    FIRST_ERROR,
+    FIRST_ERROR_LINE,
+    FIRST_ERROR_CHARACTER,
+    FIRST_ERROR_COLUMN_NAME
+FROM TABLE(RESULT_SCAN(LAST_QUERY_ID(-2)))
+WHERE STATUS = 'LOAD_FAILED'
+LIMIT 10;
 
 -- 8) Remove duplicates (keep most recent file's data for each symbol)
 DELETE FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING 
