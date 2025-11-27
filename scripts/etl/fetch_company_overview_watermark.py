@@ -415,21 +415,6 @@ def main():
     # Initialize managers
     conn = get_snowflake_connection()
     watermark_manager = WatermarkETLManager(conn)
-    s3_prefix = os.environ.get('S3_COMPANY_OVERVIEW_PREFIX', 'company_overview/')
-    max_symbols = args.max_symbols  # Use argparse instead of environment variable
-    
-    # Snowflake configuration
-    snowflake_config = {
-        'account': os.environ['SNOWFLAKE_ACCOUNT'],
-        'user': os.environ['SNOWFLAKE_USER'],
-        'password': os.environ['SNOWFLAKE_PASSWORD'],
-        'database': os.environ['SNOWFLAKE_DATABASE'],
-        'schema': os.environ['SNOWFLAKE_SCHEMA'],
-        'warehouse': os.environ['SNOWFLAKE_WAREHOUSE']
-    }
-    
-    # Initialize managers
-    watermark_manager = WatermarkETLManager(snowflake_config)
     rate_limiter = AlphaVantageRateLimiter()
     s3_client = boto3.client('s3')
     
