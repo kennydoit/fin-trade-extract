@@ -321,40 +321,17 @@ def fetch_company_overview(symbol: str, api_key: str) -> Optional[Dict]:
 
 
 def upload_to_s3(data: Dict, s3_client, bucket: str, prefix: str) -> bool:
-    """Upload company overview data to S3 as CSV."""
+    """Upload company overview data to S3 as JSON."""
     symbol = data['symbol']
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    s3_key = f"{prefix}{symbol}_{timestamp}.csv"
+    s3_key = f"{prefix}{symbol}_{timestamp}.json"
     
     try:
-        # Convert to CSV format
-        csv_buffer = StringIO()
-        
-        # Define CSV columns (essential fields for cost optimization)
-        fieldnames = ['Symbol', 'AssetType', 'Name', 'Description', 'CIK', 'Exchange',
-                     'Currency', 'Country', 'Sector', 'Industry', 'Address', 'OfficialSite',
-                     'FiscalYearEnd', 'LatestQuarter', 'MarketCapitalization', 'EBITDA',
-                     'PERatio', 'PEGRatio', 'BookValue', 'DividendPerShare', 'DividendYield',
-                     'EPS', 'RevenuePerShareTTM', 'ProfitMargin', 'OperatingMarginTTM',
-                     'ReturnOnAssetsTTM', 'ReturnOnEquityTTM', 'RevenueTTM', 'GrossProfitTTM',
-                     'DilutedEPSTTM', 'QuarterlyEarningsGrowthYOY', 'QuarterlyRevenueGrowthYOY',
-                     'AnalystTargetPrice', 'TrailingPE', 'ForwardPE', 'PriceToSalesRatioTTM',
-                     'PriceToBookRatio', 'EVToRevenue', 'EVToEBITDA', 'Beta',
-                     'Week52High', 'Week52Low', 'Day50MovingAverage', 'Day200MovingAverage',
-                     'SharesOutstanding', 'DividendDate', 'ExDividendDate']
-        
-        writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames, extrasaction='ignore', 
-                               quoting=csv.QUOTE_ALL)
-        writer.writeheader()
-        
-        # Write single row with all company overview data
-        writer.writerow(data['data'])
-        
-        # Upload to S3
+        # Upload as JSON (cleaner than CSV for complex text fields)
         s3_client.put_object(
             Bucket=bucket,
             Key=s3_key,
-            Body=csv_buffer.getvalue().encode('utf-8')
+            Body=json.dumps(data['data']).encode('utf-8')
         )
         
         logger.info(f"✅ Uploaded {symbol} to s3://{bucket}/{s3_key}")

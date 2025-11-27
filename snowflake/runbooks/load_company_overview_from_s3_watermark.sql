@@ -18,24 +18,11 @@ USE ROLE ETL_ROLE;
 -- DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
 -- DROP TABLE IF EXISTS FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW;
 
--- 1) Create external stage pointing to S3 company_overview folder (force recreate to ensure CSV format)
+-- 1) Create external stage pointing to S3 company_overview folder (JSON format)
 CREATE OR REPLACE STAGE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGE
   URL='s3://fin-trade-craft-landing/company_overview/'
   STORAGE_INTEGRATION = FIN_TRADE_S3_INTEGRATION
-  FILE_FORMAT = (
-    TYPE = 'CSV'
-    COMPRESSION = 'AUTO'
-    FIELD_DELIMITER = ','
-    RECORD_DELIMITER = '\n'
-    SKIP_HEADER = 1
-    NULL_IF = ('NULL', 'null', 'None', '')
-    EMPTY_FIELD_AS_NULL = TRUE
-    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
-    ESCAPE_UNENCLOSED_FIELD = 'NONE'
-    TRIM_SPACE = TRUE
-    ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE
-    ENCODING = 'UTF8'
-  );
+  FILE_FORMAT = (TYPE = 'JSON');
 
 -- 2) List files in stage to verify content
 -- LIST @COMPANY_OVERVIEW_STAGE;
@@ -159,7 +146,7 @@ CREATE OR REPLACE TRANSIENT TABLE FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING
     source_filename VARCHAR(500)
 );
 
--- 5) Load CSV files from S3 stage into staging table
+-- 5) Load JSON files from S3 stage into staging table
 COPY INTO FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING (
     Symbol,
     AssetType,
@@ -211,57 +198,56 @@ COPY INTO FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING (
 )
 FROM (
     SELECT 
-        $1::VARCHAR(20) as Symbol,
-        $2::VARCHAR(50) as AssetType,
-        $3::VARCHAR(500) as Name,
-        $4::TEXT as Description,
-        $5::VARCHAR(20) as CIK,
-        $6::VARCHAR(50) as Exchange,
-        $7::VARCHAR(10) as Currency,
-        $8::VARCHAR(100) as Country,
-        $9::VARCHAR(100) as Sector,
-        $10::VARCHAR(200) as Industry,
-        $11::TEXT as Address,
-        $12::VARCHAR(50) as FiscalYearEnd,
-        TRY_TO_DATE($13, 'YYYY-MM-DD') as LatestQuarter,
-        TRY_TO_NUMBER($14, 20, 0) as MarketCapitalization,
-        TRY_TO_NUMBER($15, 20, 0) as EBITDA,
-        TRY_TO_NUMBER($16, 10, 2) as PERatio,
-        TRY_TO_NUMBER($17, 10, 4) as PEGRatio,
-        TRY_TO_NUMBER($18, 10, 2) as BookValue,
-        TRY_TO_NUMBER($19, 10, 4) as DividendPerShare,
-        TRY_TO_NUMBER($20, 10, 6) as DividendYield,
-        TRY_TO_NUMBER($21, 10, 4) as EPS,
-        TRY_TO_NUMBER($22, 10, 4) as RevenuePerShareTTM,
-        TRY_TO_NUMBER($23, 10, 6) as ProfitMargin,
-        TRY_TO_NUMBER($24, 10, 6) as OperatingMarginTTM,
-        TRY_TO_NUMBER($25, 10, 6) as ReturnOnAssetsTTM,
-        TRY_TO_NUMBER($26, 10, 6) as ReturnOnEquityTTM,
-        TRY_TO_NUMBER($27, 20, 0) as RevenueTTM,
-        TRY_TO_NUMBER($28, 20, 0) as GrossProfitTTM,
-        TRY_TO_NUMBER($29, 10, 4) as DilutedEPSTTM,
-        TRY_TO_NUMBER($30, 10, 6) as QuarterlyEarningsGrowthYOY,
-        TRY_TO_NUMBER($31, 10, 6) as QuarterlyRevenueGrowthYOY,
-        TRY_TO_NUMBER($32, 10, 2) as AnalystTargetPrice,
-        TRY_TO_NUMBER($33, 10, 2) as TrailingPE,
-        TRY_TO_NUMBER($34, 10, 2) as ForwardPE,
-        TRY_TO_NUMBER($35, 10, 4) as PriceToSalesRatioTTM,
-        TRY_TO_NUMBER($36, 10, 4) as PriceToBookRatio,
-        TRY_TO_NUMBER($37, 10, 4) as EVToRevenue,
-        TRY_TO_NUMBER($38, 10, 4) as EVToEBITDA,
-        TRY_TO_NUMBER($39, 10, 6) as Beta,
-        TRY_TO_NUMBER($40, 10, 2) as Week52High,
-        TRY_TO_NUMBER($41, 10, 2) as Week52Low,
-        TRY_TO_NUMBER($42, 10, 2) as Day50MovingAverage,
-        TRY_TO_NUMBER($43, 10, 2) as Day200MovingAverage,
-        TRY_TO_NUMBER($44, 20, 0) as SharesOutstanding,
-        TRY_TO_DATE($45, 'YYYY-MM-DD') as DividendDate,
-        TRY_TO_DATE($46, 'YYYY-MM-DD') as ExDividendDate,
+        $1:Symbol::VARCHAR(20) as Symbol,
+        $1:AssetType::VARCHAR(50) as AssetType,
+        $1:Name::VARCHAR(500) as Name,
+        $1:Description::TEXT as Description,
+        $1:CIK::VARCHAR(20) as CIK,
+        $1:Exchange::VARCHAR(50) as Exchange,
+        $1:Currency::VARCHAR(10) as Currency,
+        $1:Country::VARCHAR(100) as Country,
+        $1:Sector::VARCHAR(100) as Sector,
+        $1:Industry::VARCHAR(200) as Industry,
+        $1:Address::TEXT as Address,
+        $1:FiscalYearEnd::VARCHAR(50) as FiscalYearEnd,
+        TRY_TO_DATE($1:LatestQuarter::VARCHAR, 'YYYY-MM-DD') as LatestQuarter,
+        TRY_TO_NUMBER($1:MarketCapitalization::VARCHAR, 20, 0) as MarketCapitalization,
+        TRY_TO_NUMBER($1:EBITDA::VARCHAR, 20, 0) as EBITDA,
+        TRY_TO_NUMBER($1:PERatio::VARCHAR, 10, 2) as PERatio,
+        TRY_TO_NUMBER($1:PEGRatio::VARCHAR, 10, 4) as PEGRatio,
+        TRY_TO_NUMBER($1:BookValue::VARCHAR, 10, 2) as BookValue,
+        TRY_TO_NUMBER($1:DividendPerShare::VARCHAR, 10, 4) as DividendPerShare,
+        TRY_TO_NUMBER($1:DividendYield::VARCHAR, 10, 6) as DividendYield,
+        TRY_TO_NUMBER($1:EPS::VARCHAR, 10, 4) as EPS,
+        TRY_TO_NUMBER($1:RevenuePerShareTTM::VARCHAR, 10, 4) as RevenuePerShareTTM,
+        TRY_TO_NUMBER($1:ProfitMargin::VARCHAR, 10, 6) as ProfitMargin,
+        TRY_TO_NUMBER($1:OperatingMarginTTM::VARCHAR, 10, 6) as OperatingMarginTTM,
+        TRY_TO_NUMBER($1:ReturnOnAssetsTTM::VARCHAR, 10, 6) as ReturnOnAssetsTTM,
+        TRY_TO_NUMBER($1:ReturnOnEquityTTM::VARCHAR, 10, 6) as ReturnOnEquityTTM,
+        TRY_TO_NUMBER($1:RevenueTTM::VARCHAR, 20, 0) as RevenueTTM,
+        TRY_TO_NUMBER($1:GrossProfitTTM::VARCHAR, 20, 0) as GrossProfitTTM,
+        TRY_TO_NUMBER($1:DilutedEPSTTM::VARCHAR, 10, 4) as DilutedEPSTTM,
+        TRY_TO_NUMBER($1:QuarterlyEarningsGrowthYOY::VARCHAR, 10, 6) as QuarterlyEarningsGrowthYOY,
+        TRY_TO_NUMBER($1:QuarterlyRevenueGrowthYOY::VARCHAR, 10, 6) as QuarterlyRevenueGrowthYOY,
+        TRY_TO_NUMBER($1:AnalystTargetPrice::VARCHAR, 10, 2) as AnalystTargetPrice,
+        TRY_TO_NUMBER($1:TrailingPE::VARCHAR, 10, 2) as TrailingPE,
+        TRY_TO_NUMBER($1:ForwardPE::VARCHAR, 10, 2) as ForwardPE,
+        TRY_TO_NUMBER($1:PriceToSalesRatioTTM::VARCHAR, 10, 4) as PriceToSalesRatioTTM,
+        TRY_TO_NUMBER($1:PriceToBookRatio::VARCHAR, 10, 4) as PriceToBookRatio,
+        TRY_TO_NUMBER($1:EVToRevenue::VARCHAR, 10, 4) as EVToRevenue,
+        TRY_TO_NUMBER($1:EVToEBITDA::VARCHAR, 10, 4) as EVToEBITDA,
+        TRY_TO_NUMBER($1:Beta::VARCHAR, 10, 6) as Beta,
+        TRY_TO_NUMBER($1:'52WeekHigh'::VARCHAR, 10, 2) as Week52High,
+        TRY_TO_NUMBER($1:'52WeekLow'::VARCHAR, 10, 2) as Week52Low,
+        TRY_TO_NUMBER($1:'50DayMovingAverage'::VARCHAR, 10, 2) as Day50MovingAverage,
+        TRY_TO_NUMBER($1:'200DayMovingAverage'::VARCHAR, 10, 2) as Day200MovingAverage,
+        TRY_TO_NUMBER($1:SharesOutstanding::VARCHAR, 20, 0) as SharesOutstanding,
+        TRY_TO_DATE($1:DividendDate::VARCHAR, 'YYYY-MM-DD') as DividendDate,
+        TRY_TO_DATE($1:ExDividendDate::VARCHAR, 'YYYY-MM-DD') as ExDividendDate,
         METADATA$FILENAME as source_filename
     FROM @COMPANY_OVERVIEW_STAGE
 )
-FILE_FORMAT = (TYPE = 'CSV' SKIP_HEADER = 1)
-PATTERN = '.*\.csv'
+PATTERN = '.*\.json'
 ON_ERROR = CONTINUE;
 
 -- 8) Remove duplicates (keep most recent file's data for each symbol)
