@@ -285,7 +285,7 @@ FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING;
 MERGE INTO FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW AS target
 USING (
     SELECT 
-        ls.SYMBOL_ID,
+        ABS(HASH(staging.Symbol)) % 1000000000 as SYMBOL_ID,
         staging.Symbol,
         staging.AssetType,
         staging.Name,
@@ -336,8 +336,6 @@ USING (
         staging.ExDividendDate
         
     FROM FIN_TRADE_EXTRACT.RAW.COMPANY_OVERVIEW_STAGING staging
-    LEFT JOIN FIN_TRADE_EXTRACT.RAW.LISTING_STATUS ls 
-        ON staging.Symbol = ls.SYMBOL
     WHERE staging.Symbol IS NOT NULL
 ) AS source
 ON target.SYMBOL = source.Symbol
