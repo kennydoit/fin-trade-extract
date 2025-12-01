@@ -295,7 +295,7 @@ def upload_to_s3(symbol: str, data: List[Dict], s3_client, bucket: str, prefix: 
 
 def main():
     """Main ETL execution."""
-    consecutive_failure_threshold = int(os.environ.get('CONSECUTIVE_FAILURE_THRESHOLD', 3))
+    consecutive_failure_threshold = int(os.environ.get('CONSECUTIVE_FAILURE_THRESHOLD') or 3)
     logger.info("🚀 Starting Watermark-Based Insider Transactions ETL")
     logger.info(f"❌ Omit symbols with >= {consecutive_failure_threshold} consecutive failures")
     
