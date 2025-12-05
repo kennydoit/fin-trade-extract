@@ -291,10 +291,8 @@ def main():
 
     bulk_update_watermarks(cur, successful_updates, failed_symbols)
     if len(successful_updates) == 0 and len(failed_symbols) > 0:
-        print("❌ All symbols failed to fetch transcripts. Aborting downstream steps.")
-        cur.close()
-        conn.close()
-        sys.exit(1)
+        print("⚠️  All symbols failed to fetch transcripts, but this is not an error.")
+        print("💡 Earnings call transcripts are optional and may not exist for all symbols.")
     cur.close()
     conn.close()
 
