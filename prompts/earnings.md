@@ -1,1 +1,0 @@
-# Sample API Call: https://www.alphavantage.co/query?function=EARNINGS&symbol=IBM&apikey=demo
