@@ -2,7 +2,7 @@ name: Time Series ETL - NYSE
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * 1'  # Example: every Monday at 2:00am UTC
+    - cron: '15 18 * * 1-5'  # Monday-Friday at 6:15 PM UTC
 jobs:
   time-series-nyse-etl:
     runs-on: ubuntu-22.04

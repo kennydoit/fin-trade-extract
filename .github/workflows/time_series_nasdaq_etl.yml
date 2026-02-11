@@ -2,7 +2,7 @@ name: Time Series ETL - NASDAQ
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 1 * * 1'  # Example: every Monday at 1:00am UTC
+    - cron: '15 17 * * 1-5'  # Monday-Friday at 5:15 PM UTC
 jobs:
   time-series-nasdaq-etl:
     runs-on: ubuntu-22.04
