@@ -115,21 +115,23 @@ class WatermarkETLManager:
         
         # Skip recently processed symbols if requested
         if skip_recent_hours:
+            table_prefix = 'ts.' if enhanced_mode else ''
             query += f"""
-              AND (LAST_SUCCESSFUL_RUN IS NULL 
-                   OR LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
+              AND ({table_prefix}LAST_SUCCESSFUL_RUN IS NULL 
+                   OR {table_prefix}LAST_SUCCESSFUL_RUN < DATEADD(hour, -{skip_recent_hours}, CURRENT_TIMESTAMP()))
             """
         
         # Treat 'ALL' (case-insensitive) as no filter
         # Support ETF_AND_ALL_OTHER: exclude NASDAQ and NYSE
         if exchange_filter:
+            table_prefix = 'ts.' if enhanced_mode else ''
             ef = exchange_filter.upper()
             if ef == 'ALL':
                 pass  # No filter
             elif ef == 'ETF_AND_ALL_OTHER':
-                query += "\n              AND UPPER(EXCHANGE) NOT IN ('NASDAQ', 'NYSE')"
+                query += f"\n              AND UPPER({table_prefix}EXCHANGE) NOT IN ('NASDAQ', 'NYSE')"
             else:
-                query += f"\n              AND UPPER(EXCHANGE) = '{ef}'"
+                query += f"\n              AND UPPER({table_prefix}EXCHANGE) = '{ef}'"
         
         query += "\n            ORDER BY SYMBOL"
         
