@@ -48,7 +48,8 @@ class WatermarkETLManager:
                                max_symbols: Optional[int] = None,
                                staleness_days: int = 5,
                                skip_recent_hours: Optional[int] = None,
-                               api_eligible: str = 'YES') -> List[Dict]:
+                               api_eligible: str = 'YES',
+                               enhanced_mode: bool = False) -> List[Dict]:
         """
         Get symbols to process from ETL_WATERMARKS table.
         
@@ -57,6 +58,7 @@ class WatermarkETLManager:
             max_symbols: Maximum number of symbols to return
             staleness_days: Days before data is considered stale
             skip_recent_hours: Skip symbols processed within this many hours (for incremental runs)
+            enhanced_mode: If True, only include symbols with fundamental data presence
         
         Returns list of dicts with:
         - symbol: stock ticker
@@ -65,20 +67,51 @@ class WatermarkETLManager:
         """
         self.connect()
         
-        query = f"""
-            SELECT 
-                SYMBOL,
-                EXCHANGE,
-                ASSET_TYPE,
-                STATUS,
-                FIRST_FISCAL_DATE,
-                LAST_FISCAL_DATE,
-                LAST_SUCCESSFUL_RUN,
-                CONSECUTIVE_FAILURES
-            FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
-            WHERE TABLE_NAME = '{self.table_name}'
-              AND API_ELIGIBLE = '{api_eligible}'
-        """
+        # Build base query
+        if enhanced_mode:
+            # Enhanced mode: only symbols with fundamental data presence
+            query = f"""
+                SELECT DISTINCT
+                    ts.SYMBOL,
+                    ts.EXCHANGE,
+                    ts.ASSET_TYPE,
+                    ts.STATUS,
+                    ts.FIRST_FISCAL_DATE,
+                    ts.LAST_FISCAL_DATE,
+                    ts.LAST_SUCCESSFUL_RUN,
+                    ts.CONSECUTIVE_FAILURES
+                FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS ts
+                WHERE ts.TABLE_NAME = '{self.table_name}'
+                  AND ts.API_ELIGIBLE = '{api_eligible}'
+                  AND EXISTS (
+                      SELECT 1 FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS fund
+                      WHERE fund.SYMBOL = ts.SYMBOL
+                        AND fund.TABLE_NAME IN (
+                            'BALANCE_SHEET',
+                            'CASH_FLOW',
+                            'INCOME_STATEMENT',
+                            'EARNINGS_CALL_TRANSCRIPTS',
+                            'INSIDER_TRANSACTIONS'
+                        )
+                        AND fund.LAST_FISCAL_DATE IS NOT NULL
+                  )
+            """
+        else:
+            # Standard mode: all symbols
+            query = f"""
+                SELECT 
+                    SYMBOL,
+                    EXCHANGE,
+                    ASSET_TYPE,
+                    STATUS,
+                    FIRST_FISCAL_DATE,
+                    LAST_FISCAL_DATE,
+                    LAST_SUCCESSFUL_RUN,
+                    CONSECUTIVE_FAILURES
+                FROM FIN_TRADE_EXTRACT.RAW.ETL_WATERMARKS
+                WHERE TABLE_NAME = '{self.table_name}'
+                  AND API_ELIGIBLE = '{api_eligible}'
+            """
         
         # Skip recently processed symbols if requested
         if skip_recent_hours:
@@ -104,6 +137,8 @@ class WatermarkETLManager:
             query += f"\n            LIMIT {max_symbols}"
         
         logger.info(f"📊 Querying watermarks for {self.table_name}...")
+        if enhanced_mode:
+            logger.info(f"🎯 Enhanced mode: Filtering for symbols with fundamental data")
         if exchange_filter:
             logger.info(f"🏢 Exchange filter: {exchange_filter}")
         if max_symbols:
@@ -488,6 +523,7 @@ def main():
     staleness_days = 50  # Hard-coded: use compact mode if last_fiscal_date is within 50 days
     skip_recent_hours = int(os.environ['SKIP_RECENT_HOURS']) if os.environ.get('SKIP_RECENT_HOURS') else None
     batch_size = int(os.environ.get('BATCH_SIZE', '50'))
+    enhanced_time_series = os.environ.get('ENHANCED_TIME_SERIES', 'FALSE').upper() == 'TRUE'
     
     # Snowflake configuration (RSA key auth)
     private_key_path = os.environ.get('SNOWFLAKE_PRIVATE_KEY_PATH', 'snowflake_rsa_key.der')
@@ -538,7 +574,8 @@ def main():
             max_symbols=max_symbols,
             staleness_days=staleness_days,
             skip_recent_hours=skip_recent_hours,
-            api_eligible=api_eligible
+            api_eligible=api_eligible,
+            enhanced_mode=enhanced_time_series
         )
     finally:
         # CRITICAL: Close Snowflake connection immediately after getting symbols
