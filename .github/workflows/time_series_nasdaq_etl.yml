@@ -1,6 +1,15 @@
 name: Time Series ETL - NASDAQ
 on:
   workflow_dispatch:
+    inputs:
+      enhanced_time_series:
+        description: 'Enhanced Time Series (only symbols with fundamental data)'
+        required: false
+        default: 'TRUE'
+        type: choice
+        options:
+          - 'TRUE'
+          - 'FALSE'
   schedule:
     - cron: '15 22 * * 1-5'  # Monday-Friday at 5:15 PM EST (10:15 PM UTC)
 jobs:
@@ -46,6 +55,7 @@ jobs:
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
           EXCHANGE_FILTER: NASDAQ
+          ENHANCED_TIME_SERIES: ${{ github.event.inputs.enhanced_time_series || 'TRUE' }}
         run: |
           python scripts/etl/fetch_time_series_watermark.py
 
