@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # Run after listing status ETL (Sundays at 6PM UTC, 1 hour after listing status at 5PM)
-    - cron: '0 18 * * 0'
+    - cron: '0 0 0 0 0'
 
 jobs:
   update-watermarks:

@@ -11,7 +11,7 @@ on:
           - 'TRUE'
           - 'FALSE'
   schedule:
-    - cron: '45 23 * * 1-5'  # Monday-Friday at 6:45 PM EST (11:45 PM UTC)
+    - cron: '0 0 0 0 0'  # Monday-Friday at 6:45 PM EST (11:45 PM UTC)
 jobs:
   time-series-nyse-etl:
     runs-on: ubuntu-22.04

@@ -3,7 +3,7 @@ name: Listing Status ETL
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 17 * * 0'  # Weekly on Sundays at 5 PM UTC
+    - cron: '0 0 0 0 0'  # Weekly on Sundays at 5 PM UTC
 
 jobs:
   listing-status-etl:

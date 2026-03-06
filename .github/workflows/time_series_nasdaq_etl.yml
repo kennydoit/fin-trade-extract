@@ -11,7 +11,7 @@ on:
           - 'TRUE'
           - 'FALSE'
   schedule:
-    - cron: '15 22 * * 1-5'  # Monday-Friday at 5:15 PM EST (10:15 PM UTC)
+    - cron: '0 0 0 0 0'  # Monday-Friday at 5:15 PM EST (10:15 PM UTC)
 jobs:
   time-series-nasdaq-etl:
     runs-on: ubuntu-22.04

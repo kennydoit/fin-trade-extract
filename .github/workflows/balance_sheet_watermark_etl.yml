@@ -33,7 +33,7 @@ on:
         default: 3
   schedule:
     # Run weekly on Tuesday at 11 PM UTC
-    - cron: '0 23 * * 2'
+    - cron: '0 0 0 0 0'
 
 jobs:
   watermark-balance-sheet-etl:

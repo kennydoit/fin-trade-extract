@@ -10,7 +10,7 @@ on:
         type: string
   schedule:
     # Run after listing status ETL (Sundays at 7PM UTC, 2 hours after listing status at 5PM)
-    - cron: '0 19 * * 0'
+    - cron: '0 0 0 0 0'
 jobs:
   watermark-company-overview-etl:
     runs-on: ubuntu-latest
